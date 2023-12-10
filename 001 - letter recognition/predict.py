@@ -20,9 +20,13 @@ image_paths = [
     f'{test_set_path}/A_01.png',
     f'{test_set_path}/A_02.png',
     f'{test_set_path}/A_03.png',
+    f'{test_set_path}/A_04.png',
+    f'{test_set_path}/A_05.png',
     f'{test_set_path}/B_01.png',
     f'{test_set_path}/B_02.png',
-    f'{test_set_path}/B_03.png'
+    f'{test_set_path}/B_03.png',
+    f'{test_set_path}/B_04.png',
+    f'{test_set_path}/B_05.png'
 ]
 
 # Initialize a variable to track incorrect predictions
