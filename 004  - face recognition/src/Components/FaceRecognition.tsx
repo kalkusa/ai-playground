@@ -1,9 +1,11 @@
 import { useEffect, useRef } from "react";
 import styles from "./FaceRecognition.module.css";
 import * as faceapi from "face-api.js";
+import { TinyFaceDetectorOptions } from "face-api.js";
 
 const FaceRecognition = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const loadModels = async () => {
@@ -47,6 +49,31 @@ const FaceRecognition = () => {
       if (videoRef.current && videoRef.current.srcObject) {
         const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
         tracks.forEach((track) => track.stop());
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const handlePlay = () => {
+      intervalRef.current = setInterval(async () => {
+        if (videoRef.current) {
+          const options = new faceapi.TinyFaceDetectorOptions();
+          const detections = await faceapi.detectAllFaces(
+            videoRef.current,
+            options
+          );
+          console.log(detections);
+        }
+      }, 1000);
+    };
+
+    const videoElement = videoRef.current;
+    videoElement?.addEventListener("play", handlePlay);
+
+    return () => {
+      videoElement?.removeEventListener("play", handlePlay);
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
       }
     };
   }, []);
