@@ -1,11 +1,11 @@
 import { useEffect, useRef } from "react";
 import styles from "./FaceRecognition.module.css";
 import * as faceapi from "face-api.js";
-import { TinyFaceDetectorOptions } from "face-api.js";
 
 const FaceRecognition = () => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   useEffect(() => {
     const loadModels = async () => {
@@ -37,6 +37,12 @@ const FaceRecognition = () => {
 
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
+          videoRef.current.onloadedmetadata = () => {
+            if (canvasRef.current) {
+              canvasRef.current.width = videoRef?.current?.videoWidth ?? 0;
+              canvasRef.current.height = videoRef?.current?.videoHeight ?? 0;
+            }
+          };
         }
       } catch (error) {
         console.error("Error accessing the camera:", error);
@@ -56,15 +62,35 @@ const FaceRecognition = () => {
   useEffect(() => {
     const handlePlay = () => {
       intervalRef.current = setInterval(async () => {
-        if (videoRef.current) {
+        if (videoRef.current && canvasRef.current) {
           const options = new faceapi.TinyFaceDetectorOptions();
-          const detections = await faceapi.detectAllFaces(
-            videoRef.current,
-            options
-          );
-          console.log(detections);
+          const detections = await faceapi
+            .detectAllFaces(videoRef.current, options)
+            .withAgeAndGender()
+            .withFaceExpressions();
+            // .withFaceLandmarks();
+          const resizedDetections = faceapi.resizeResults(detections, {
+            width: videoRef.current.videoWidth,
+            height: videoRef.current.videoHeight,
+          });
+          const canvas = canvasRef.current;
+          faceapi.matchDimensions(canvas, {
+            width: videoRef.current.videoWidth,
+            height: videoRef.current.videoHeight,
+          });
+          faceapi.draw.drawDetections(canvas, resizedDetections);
+          faceapi.draw.drawFaceExpressions(canvas, resizedDetections);
+
+          resizedDetections.forEach(detection => {
+            const { age, gender, genderProbability } = detection;
+            const text = `${parseInt(age.toString(), 10)} years old ${gender} (${Math.round(genderProbability * 100)}%)`;
+            const anchor = detection.detection.box.topRight;
+            new faceapi.draw.DrawTextField(
+              [text], anchor
+            ).draw(canvas);
+          });
         }
-      }, 1000);
+      }, 500);
     };
 
     const videoElement = videoRef.current;
@@ -79,7 +105,7 @@ const FaceRecognition = () => {
   }, []);
 
   return (
-    <section id="face-recognition">
+    <section id="face-recognition"  className={styles.container}>
       <video
         id="face-recognition-video"
         className={styles.video}
@@ -87,6 +113,7 @@ const FaceRecognition = () => {
         autoPlay
         muted
       />
+      <canvas ref={canvasRef} className={styles.overlay} />
     </section>
   );
 };

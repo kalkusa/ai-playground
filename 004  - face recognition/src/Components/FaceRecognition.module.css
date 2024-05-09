@@ -1,3 +1,21 @@
-.video {
+.container {
+  position: relative;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #000;
+}
+
+.video,
+.overlay {
+  position: absolute;
+  width: auto;
   height: 70vh;
+  object-fit: cover;
+}
+
+.overlay {
+  z-index: 10;
 }
