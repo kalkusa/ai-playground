@@ -13,7 +13,6 @@ import {
   PressKeyTool,
   WaitForElementTool,
   GetElementTextTool,
-  HandleCookieConsentTool,
   delay
 } from "./tools";
 import { LMStudioChatModel } from "./models/lm-studio-chat-model";
@@ -28,7 +27,6 @@ const ActionSchema = z.object({
     "pressKey",
     "waitForElement", 
     "getElementText",
-    "handleCookieConsent",
     "GOAL_ACHIEVED"
   ]).describe("The action to perform"),
   parameters: z.object({
@@ -58,7 +56,7 @@ Here's the output schema:
       "description": "A detailed description of what you observe on the page and what action you're taking"
     },
     "action": {
-      "enum": ["navigateTo", "clickElement", "typeText", "pressKey", "waitForElement", "getElementText", "handleCookieConsent", "GOAL_ACHIEVED"],
+      "enum": ["navigateTo", "clickElement", "typeText", "pressKey", "waitForElement", "getElementText", "GOAL_ACHIEVED"],
       "description": "The action to perform"
     },
     "parameters": {
@@ -99,77 +97,104 @@ function extractRelevantHtml(html: string): string {
     const titleMatch = /<title>(.*?)<\/title>/i.exec(html);
     const title = titleMatch ? titleMatch[1] : 'Unknown Page';
     
-    // Create a focused structure report with only the most essential elements
+    // Create a simple report of interactive elements
     let structureReport = `
 <html>
 <head><title>${title}</title></head>
 <body>
-<h1>HTML Structure Report (Full HTML was ${html.length} characters)</h1>
+<h1>HTML Structure Report for: ${title}</h1>
+<p>Full HTML was ${html.length} characters, showing only key elements.</p>
 
-<h2>Key Interactive Elements</h2>
+<h2>Buttons</h2>
 <ul>
 `;
     
-    // Prioritize search elements, forms, and main navigation
-    const searchPattern = /<input[^>]*type=["']?search["']?[^>]*>/gi;
-    const formActionPattern = /<form[^>]*action=["']([^"']*)["'][^>]*>/gi;
-    const mainButtonPattern = /<button[^>]*id=["']([^"']*)["'][^>]*>(.*?)<\/button>/gi;
-    const navPattern = /<nav[^>]*>([\s\S]*?)<\/nav>/gi;
-    
-    // Find search boxes - these are critical for Google
-    let searchMatch;
-    let foundElements = 0;
-    while ((searchMatch = searchPattern.exec(html)) !== null && foundElements < 5) {
-      structureReport += `<li>Search: ${searchMatch[0].substring(0, 100)}</li>\n`;
-      foundElements++;
-    }
-    
-    // Find forms with actions
-    let formMatch;
-    foundElements = 0;
-    while ((formMatch = formActionPattern.exec(html)) !== null && foundElements < 5) {
-      structureReport += `<li>Form with action: ${formMatch[1]}</li>\n`;
-      foundElements++;
-    }
-    
-    // Find buttons with IDs (these are likely important)
+    // Extract buttons - these are the main interactive elements
+    const buttonPattern = /<button[^>]*>(.*?)<\/button>/gi;
     let buttonMatch;
-    foundElements = 0;
-    while ((buttonMatch = mainButtonPattern.exec(html)) !== null && foundElements < 5) {
-      const buttonId = buttonMatch[1];
-      const buttonText = buttonMatch[0].match(/>([^<]*)</)?.[1] || '';
-      structureReport += `<li>Button ID=${buttonId}: ${buttonText}</li>\n`;
-      foundElements++;
+    let buttonCount = 0;
+    
+    while ((buttonMatch = buttonPattern.exec(html)) !== null && buttonCount < 10) {
+      const buttonText = buttonMatch[1].replace(/<[^>]*>/g, '').trim(); // Strip inner HTML tags
+      structureReport += `<li>Button: ${buttonText || '[No text]'}</li>\n`;
+      buttonCount++;
     }
     
-    // If we have very few elements, try to add some more generic ones
-    if (foundElements < 5) {
-      const genericButtonPattern = /<button[^>]*>(.*?)<\/button>/gi;
-      const inputPattern = /<input[^>]*>/gi;
-      
-      // Add a few generic buttons
-      foundElements = 0;
-      while ((buttonMatch = genericButtonPattern.exec(html)) !== null && foundElements < 5) {
-        const buttonText = buttonMatch[0].match(/>([^<]*)</)?.[1] || '';
-        structureReport += `<li>Button: ${buttonText || buttonMatch[0].substring(0, 50)}</li>\n`;
-        foundElements++;
-      }
-      
-      // Add a few inputs
-      foundElements = 0;
-      let inputMatch;
-      while ((inputMatch = inputPattern.exec(html)) !== null && foundElements < 5) {
-        structureReport += `<li>Input: ${inputMatch[0].substring(0, 100)}</li>\n`;
-        foundElements++;
-      }
-    }
-    
-    // Close the structure report
     structureReport += `
 </ul>
 
-<h2>Page Structure</h2>
-<p>Token limit reached: only showing most important interactive elements. The model should rely primarily on the screenshot for visual layout and element identification.</p>
+<h2>Form Fields</h2>
+<ul>
+`;
+    
+    // Extract input fields with their labels
+    const inputPattern = /<input[^>]*>/gi;
+    let inputMatch;
+    let inputCount = 0;
+    
+    while ((inputMatch = inputPattern.exec(html)) !== null && inputCount < 10) {
+      // Try to extract id or name attribute
+      const idMatch = /id=["']([^"']*)["']/i.exec(inputMatch[0]);
+      const nameMatch = /name=["']([^"']*)["']/i.exec(inputMatch[0]);
+      const typeMatch = /type=["']([^"']*)["']/i.exec(inputMatch[0]);
+      
+      const id = idMatch ? idMatch[1] : '';
+      const name = nameMatch ? nameMatch[1] : '';
+      const type = typeMatch ? typeMatch[1] : 'text';
+      
+      structureReport += `<li>${type} input: ${name || id || 'unnamed'}</li>\n`;
+      inputCount++;
+    }
+    
+    // Extract select elements
+    structureReport += `
+</ul>
+
+<h2>Select Dropdowns</h2>
+<ul>
+`;
+    
+    const selectPattern = /<select[^>]*>([\s\S]*?)<\/select>/gi;
+    let selectMatch;
+    let selectCount = 0;
+    
+    while ((selectMatch = selectPattern.exec(html)) !== null && selectCount < 5) {
+      const idMatch = /id=["']([^"']*)["']/i.exec(selectMatch[0]);
+      const nameMatch = /name=["']([^"']*)["']/i.exec(selectMatch[0]);
+      
+      const id = idMatch ? idMatch[1] : '';
+      const name = nameMatch ? nameMatch[1] : '';
+      
+      structureReport += `<li>Dropdown: ${name || id || 'unnamed'}</li>\n`;
+      selectCount++;
+    }
+    
+    // Add links
+    structureReport += `
+</ul>
+
+<h2>Key Links</h2>
+<ul>
+`;
+    
+    const linkPattern = /<a[^>]*href=["']([^"']*)["'][^>]*>(.*?)<\/a>/gi;
+    let linkMatch;
+    let linkCount = 0;
+    
+    while ((linkMatch = linkPattern.exec(html)) !== null && linkCount < 10) {
+      const url = linkMatch[1];
+      const text = linkMatch[2].replace(/<[^>]*>/g, '').trim(); // Strip inner HTML tags
+      
+      if (text && url && !url.startsWith('#')) { // Skip empty links and anchors
+        structureReport += `<li>${text}: ${url}</li>\n`;
+        linkCount++;
+      }
+    }
+    
+    structureReport += `
+</ul>
+
+<p>Note: This is a simplified view of the page. Use the screenshot to see the visual layout.</p>
 </body>
 </html>`;
     
@@ -234,8 +259,7 @@ async function main() {
         new TypeTextTool(webAgent, currentStep),
         new PressKeyTool(webAgent, currentStep),
         new WaitForElementTool(webAgent, currentStep),
-        new GetElementTextTool(webAgent, currentStep),
-        new HandleCookieConsentTool(webAgent, currentStep)
+        new GetElementTextTool(webAgent, currentStep)
       ];
       
       // Create prompt messages directly without template parsing
@@ -249,9 +273,9 @@ async function main() {
         content: "You are a web browsing assistant that helps users navigate and interact with websites. " +
           "You have access to a WebAgent API that provides functions to interact with web pages using Puppeteer.\n\n" +
           "IMPORTANT: Many websites show cookie consent popups, ads, or modal windows when you first visit them.\n" +
-          "- ALWAYS check for and handle these popups FIRST before attempting other actions\n" +
-          "- For cookie consent banners, look for buttons with text like \"Accept\", \"Accept all\", \"I agree\", \"Okay\", etc.\n" +
-          "- If you see a popup or modal that blocks the main content, find a way to close it first\n\n" +
+          "- When you see a cookie consent dialog, use the clickElement action with text=\"Accept\" or a similar selector\n" +
+          "- To click a button with specific text, use selector format: text=\"Button Text\" (e.g., text=\"Accept all\")\n" +
+          "- If a popup or modal blocks the main content, find a way to close it first\n\n" +
           (currentStep === 1 
             ? "GOAL: Navigate to google.com, type \"AI\" in the search box, click the search button or press Enter to search, and then click on the first search result.\n\n"
             : "PROGRESS TRACKING:\n" +
@@ -264,12 +288,10 @@ async function main() {
           "2. The exact action to execute with appropriate parameters\n\n" +
           formatInstructionsString + "\n\n" + 
           "When working with selectors:\n" +
-          "- ALWAYS analyze the HTML source code to find exact selectors that exist in the document\n" +
-          "- Look for id, name, class attributes, and HTML structure to determine the correct selectors\n" +
+          "- Analyze the HTML source code and the screenshot to find exact selectors or text content\n" +
+          "- For text-based selection, use selector format: text=\"Text to find\" (e.g., text=\"Accept cookies\")\n" +
+          "- Standard CSS selectors also work (e.g., #search-box, .submit-button)\n" +
           "- Don't make up selectors that don't exist in the HTML\n\n" +
-          "When handling cookie consent dialogs:\n" +
-          "- Use the handleCookieConsent action to automatically detect and handle common consent patterns\n" +
-          "- If automatic handling fails, look for relevant accept buttons and click them directly\n\n" +
           "When you believe you have completed the goal, respond with \"GOAL_ACHIEVED\" as your action."
       };
 
@@ -368,9 +390,6 @@ async function main() {
             break;
           case "pressKey":
             toolArgs = result.parameters.key || "";
-            break;
-          case "handleCookieConsent":
-            toolArgs = "";
             break;
         }
         

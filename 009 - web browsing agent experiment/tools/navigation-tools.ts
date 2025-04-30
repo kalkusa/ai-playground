@@ -86,48 +86,4 @@ export class WaitForElementTool extends WebAgentTool {
       return `Error waiting for element ${selector}: ${error}`;
     }
   }
-}
-
-/**
- * Tool for handling cookie consent
- */
-export class HandleCookieConsentTool extends WebAgentTool {
-  constructor(webAgent: WebAgent, stepNumber: number) {
-    super(
-      "handleCookieConsent",
-      "Automatically attempts to detect and accept cookie consent dialogs.",
-      webAgent,
-      stepNumber
-    );
-  }
-  
-  async _call(_: string): Promise<string> {
-    console.log(`Executing handleCookieConsent`);
-    try {
-      const handled = await this.webAgent.handleCookieConsent();
-      
-      // Add a pause after the action
-      console.log(`Pausing for 500ms...`);
-      await delay(500);
-      
-      // Take a screenshot after the action
-      const screenshotName = `step_${this.stepNumber}_cookie_consent_${handled ? 'handled' : 'not_found'}`;
-      const screenshotPath = await this.webAgent.takeScreenshot(screenshotName);
-      
-      // Get the page source
-      const pageSource = await this.webAgent.getPageSource();
-      
-      // Save the HTML source to a file
-      const htmlFileName = `${screenshotName}_source.html`;
-      const htmlFilePath = path.join('./screenshots', htmlFileName);
-      fs.writeFileSync(htmlFilePath, pageSource);
-      
-      return handled ? 
-        `Successfully handled cookie consent dialog. Screenshot saved to ${screenshotPath}` : 
-        `No cookie consent dialog found or could not handle it. Screenshot saved to ${screenshotPath}`;
-    } catch (error) {
-      console.error(`Error handling cookie consent:`, error);
-      return `Error handling cookie consent: ${error}`;
-    }
-  }
 } 

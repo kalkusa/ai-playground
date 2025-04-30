@@ -40,59 +40,6 @@ class WebAgent {
   }
 
   /**
-   * Attempts to detect and handle common cookie consent dialogs
-   */
-  async handleCookieConsent(): Promise<boolean> {
-    if (!this.page) {
-      throw new Error('WebAgent not initialized. Call initialize() first.');
-    }
-
-    try {
-      console.log('Attempting to detect and handle cookie consent dialogs...');
-      
-      // List of common cookie accept button selectors
-      const commonSelectors = [
-        // English
-        'button[id*="accept"]', 'button[class*="accept"]', 'button[id*="cookie"]', 'button[class*="cookie"]',
-        'a[id*="accept"]', 'a[class*="accept"]', '#accept-cookies', '.accept-cookies',
-        'button:has-text("Accept")', 'button:has-text("Accept all")', 'button:has-text("I agree")', 'button:has-text("OK")',
-        // German
-        'button:has-text("Akzeptieren")', 'button:has-text("Alle akzeptieren")', 'button:has-text("Zustimmen")',
-        // French
-        'button:has-text("Accepter")', 'button:has-text("J\'accepte")', 
-        // Spanish
-        'button:has-text("Aceptar")', 'button:has-text("Acepto")',
-        // Generic
-        '[aria-label*="cookie" i]', '[aria-label*="consent" i]', '[title*="cookie" i]', '[title*="consent" i]',
-        // Google specific
-        'button[id="L2AGLb"]', 'form[action="https://consent.google.com"] button', '.cookieBar button', '#consent-bump button'
-      ];
-      
-      // Try each selector with a short timeout
-      for (const selector of commonSelectors) {
-        try {
-          const exists = await this.page.waitForSelector(selector, { visible: true, timeout: 1000 });
-          if (exists) {
-            console.log(`Found cookie consent element with selector: ${selector}`);
-            await this.page.click(selector);
-            console.log('Clicked cookie consent button');
-            await this.takeScreenshot('cookie_consent_handled');
-            return true;
-          }
-        } catch (e) {
-          // Selector not found, continue to next one
-        }
-      }
-      
-      console.log('No cookie consent dialog detected or could not handle it');
-      return false;
-    } catch (error) {
-      console.error('Error handling cookie consent:', error);
-      return false;
-    }
-  }
-
-  /**
    * Navigate to a specific URL
    */
   async navigateTo(url: string): Promise<void> {
@@ -107,8 +54,7 @@ class WebAgent {
       // Take a screenshot after navigation
       await this.takeScreenshot(`navigate_to_${this.sanitizeFilename(url)}`);
       
-      // Attempt to handle cookie consent dialogs after navigation
-      await this.handleCookieConsent();
+      // Remove the cookie consent handling - let the LLM decide when to handle cookie consents
     } catch (error) {
       console.error(`Error navigating to ${url}:`, error);
       throw error;
@@ -126,14 +72,42 @@ class WebAgent {
     try {
       console.log(`Clicking element with selector: ${selector}`);
       
-      // Wait for the element to be visible with reduced timeout
-      await this.page.waitForSelector(selector, { visible: true, timeout: 3000 });
+      // Check if the selector is a text search (e.g., "text=Search")
+      if (selector.startsWith('text=')) {
+        const searchText = selector.substring(5);
+        console.log(`Looking for element with text: ${searchText}`);
+        
+        const clicked = await this.page.evaluate((text) => {
+          // Find all clickable elements
+          const elements = Array.from(document.querySelectorAll('button, a, input[type="submit"], [role="button"], [onclick]'));
+          
+          // Look for text match
+          for (const element of elements) {
+            if (element.textContent && element.textContent.includes(text)) {
+              (element as HTMLElement).click();
+              return true;
+            }
+          }
+          return false;
+        }, searchText);
+        
+        if (clicked) {
+          console.log(`Clicked element with text: ${searchText}`);
+          await this.takeScreenshot(`click_text_${this.sanitizeFilename(searchText)}`);
+          return;
+        } else {
+          throw new Error(`Element with text "${searchText}" not found`);
+        }
+      }
       
-      // Click the element
+      // If standard selector, use regular Puppeteer click with increased timeout
+      const timeout = 5000;
+      await this.page.waitForSelector(selector, { visible: true, timeout });
       await this.page.click(selector);
       
-      // Take a screenshot after clicking
+      console.log(`Successfully clicked element with selector: ${selector}`);
       await this.takeScreenshot(`click_${this.sanitizeFilename(selector)}`);
+      
     } catch (error) {
       console.error(`Error clicking element with selector ${selector}:`, error);
       throw error;

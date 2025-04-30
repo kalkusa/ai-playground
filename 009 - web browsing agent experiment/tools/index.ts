@@ -1,8 +1,7 @@
 import WebAgentTool from './base-tool';
 import { 
   NavigateToTool,
-  WaitForElementTool,
-  HandleCookieConsentTool 
+  WaitForElementTool
 } from './navigation-tools';
 import {
   ClickElementTool,
@@ -19,7 +18,6 @@ export {
   // Navigation tools
   NavigateToTool,
   WaitForElementTool,
-  HandleCookieConsentTool,
   
   // Interaction tools
   ClickElementTool,
