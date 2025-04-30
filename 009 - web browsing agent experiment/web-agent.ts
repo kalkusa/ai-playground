@@ -40,6 +40,59 @@ class WebAgent {
   }
 
   /**
+   * Attempts to detect and handle common cookie consent dialogs
+   */
+  async handleCookieConsent(): Promise<boolean> {
+    if (!this.page) {
+      throw new Error('WebAgent not initialized. Call initialize() first.');
+    }
+
+    try {
+      console.log('Attempting to detect and handle cookie consent dialogs...');
+      
+      // List of common cookie accept button selectors
+      const commonSelectors = [
+        // English
+        'button[id*="accept"]', 'button[class*="accept"]', 'button[id*="cookie"]', 'button[class*="cookie"]',
+        'a[id*="accept"]', 'a[class*="accept"]', '#accept-cookies', '.accept-cookies',
+        'button:has-text("Accept")', 'button:has-text("Accept all")', 'button:has-text("I agree")', 'button:has-text("OK")',
+        // German
+        'button:has-text("Akzeptieren")', 'button:has-text("Alle akzeptieren")', 'button:has-text("Zustimmen")',
+        // French
+        'button:has-text("Accepter")', 'button:has-text("J\'accepte")', 
+        // Spanish
+        'button:has-text("Aceptar")', 'button:has-text("Acepto")',
+        // Generic
+        '[aria-label*="cookie" i]', '[aria-label*="consent" i]', '[title*="cookie" i]', '[title*="consent" i]',
+        // Google specific
+        'button[id="L2AGLb"]', 'form[action="https://consent.google.com"] button', '.cookieBar button', '#consent-bump button'
+      ];
+      
+      // Try each selector with a short timeout
+      for (const selector of commonSelectors) {
+        try {
+          const exists = await this.page.waitForSelector(selector, { visible: true, timeout: 1000 });
+          if (exists) {
+            console.log(`Found cookie consent element with selector: ${selector}`);
+            await this.page.click(selector);
+            console.log('Clicked cookie consent button');
+            await this.takeScreenshot('cookie_consent_handled');
+            return true;
+          }
+        } catch (e) {
+          // Selector not found, continue to next one
+        }
+      }
+      
+      console.log('No cookie consent dialog detected or could not handle it');
+      return false;
+    } catch (error) {
+      console.error('Error handling cookie consent:', error);
+      return false;
+    }
+  }
+
+  /**
    * Navigate to a specific URL
    */
   async navigateTo(url: string): Promise<void> {
@@ -50,7 +103,12 @@ class WebAgent {
     try {
       console.log(`Navigating to ${url}...`);
       await this.page.goto(url, { waitUntil: 'networkidle2' });
+      
+      // Take a screenshot after navigation
       await this.takeScreenshot(`navigate_to_${this.sanitizeFilename(url)}`);
+      
+      // Attempt to handle cookie consent dialogs after navigation
+      await this.handleCookieConsent();
     } catch (error) {
       console.error(`Error navigating to ${url}:`, error);
       throw error;
@@ -68,8 +126,8 @@ class WebAgent {
     try {
       console.log(`Clicking element with selector: ${selector}`);
       
-      // Wait for the element to be visible
-      await this.page.waitForSelector(selector, { visible: true });
+      // Wait for the element to be visible with reduced timeout
+      await this.page.waitForSelector(selector, { visible: true, timeout: 3000 });
       
       // Click the element
       await this.page.click(selector);
@@ -93,8 +151,8 @@ class WebAgent {
     try {
       console.log(`Typing "${text}" into element with selector: ${selector}`);
       
-      // Wait for the element to be visible
-      await this.page.waitForSelector(selector, { visible: true });
+      // Wait for the element to be visible with reduced timeout
+      await this.page.waitForSelector(selector, { visible: true, timeout: 3000 });
       
       // Clear the input field first
       await this.page.evaluate((sel) => {
@@ -154,7 +212,7 @@ class WebAgent {
   /**
    * Wait for a specific element to appear on the page
    */
-  async waitForElement(selector: string, timeoutMs: number = 30000): Promise<void> {
+  async waitForElement(selector: string, timeoutMs: number = 3000): Promise<void> {
     if (!this.page) {
       throw new Error('WebAgent not initialized. Call initialize() first.');
     }
@@ -183,8 +241,8 @@ class WebAgent {
     try {
       console.log(`Getting text from element with selector: ${selector}`);
       
-      // Wait for the element to be visible
-      await this.page.waitForSelector(selector, { visible: true });
+      // Wait for the element to be visible with reduced timeout
+      await this.page.waitForSelector(selector, { visible: true, timeout: 3000 });
       
       // Get the text content
       const text = await this.page.$eval(selector, (element) => element.textContent?.trim() || '');
@@ -205,7 +263,7 @@ class WebAgent {
     }
 
     try {
-      // Create a timestamp for unique filenames
+      // Create a timestamp for unique filenames but preserve the step naming format
       const timestamp = new Date().toISOString().replace(/:/g, '-');
       const filename = `${name}_${timestamp}.png`;
       const screenshotPath = path.join(this.screenshotsDir, filename);
@@ -256,6 +314,24 @@ class WebAgent {
       this.browser = null;
       this.page = null;
       console.log('WebAgent cleaned up successfully');
+    }
+  }
+
+  /**
+   * Get the HTML source code of the current page
+   */
+  async getPageSource(): Promise<string> {
+    if (!this.page) {
+      throw new Error('WebAgent not initialized. Call initialize() first.');
+    }
+
+    try {
+      // Get the page content
+      const content = await this.page.content();
+      return content;
+    } catch (error) {
+      console.error('Error getting page source:', error);
+      throw error;
     }
   }
 }
