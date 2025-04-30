@@ -105,8 +105,8 @@ async function main() {
     console.log('Loading Gemma 3 model...');
     const lmStudioModel = await client.llm.model("gemma-3-27b-it-qat");
     
-    // Create a LangChain model wrapper
-    const model = new LMStudioChatModel("gemma-3-27b-it-qat");
+    // Create a LangChain model wrapper with increased context length
+    const model = new LMStudioChatModel("gemma-3-27b-it-qat", 24000);
     await model.init();
     
     // Set up the Zod parser
@@ -351,4 +351,4 @@ async function main() {
   }
 }
 
-main().catch(console.error); 
+main().catch(console.error);

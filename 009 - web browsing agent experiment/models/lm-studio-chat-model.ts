@@ -7,11 +7,13 @@ export class LMStudioChatModel {
   private client: LMStudioClient;
   private modelName: string;
   private lmStudioModel: any;
+  private contextLength: number;
 
-  constructor(modelName: string) {
+  constructor(modelName: string, contextLength: number = 16000) {
     this.client = new LMStudioClient();
     this.modelName = modelName;
     this.lmStudioModel = null;
+    this.contextLength = contextLength;
   }
 
   async init() {
@@ -37,7 +39,13 @@ export class LMStudioChatModel {
       return formattedMsg;
     });
 
-    const response = await this.lmStudioModel.respond(formattedMessages);
+    const response = await this.lmStudioModel.respond(formattedMessages, {
+      maxTokens: 4000,
+      contextLength: this.contextLength,
+      temperature: 0.7,
+      topP: 0.9
+    });
+    
     return response.content;
   }
 } 
