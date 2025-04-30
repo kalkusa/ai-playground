@@ -6,6 +6,6 @@ Below are tasks you need to perform to complete the project. You need to go task
 
 | Id | Task    | Status | 
 | --- | -------- | ------- | 
-| 1   | Prepare web-agent.ts file which will contain logic related to pupetter interacting with websited. It should contain functions which LLM can use to interact with web.  | New    |
+| 1   | Prepare web-agent.ts file which will contain logic related to pupetter interacting with websited. It should contain functions which LLM can use to interact with web.  | Completed    |
 | 2   | Prepare prompt describing LLM how pupetter API from web-agent.ts works. Prompt should be part of index.ts | New     |
 | 3   | Prepare initial prompt describing a task for LLM - navigate to google.com, type AI in search box, search for results, navigate to first result. | New    |
