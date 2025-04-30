@@ -288,10 +288,20 @@ async function main() {
           "2. The exact action to execute with appropriate parameters\n\n" +
           formatInstructionsString + "\n\n" + 
           "When working with selectors:\n" +
-          "- Analyze the HTML source code and the screenshot to find exact selectors or text content\n" +
-          "- For text-based selection, use selector format: text=\"Text to find\" (e.g., text=\"Accept cookies\")\n" +
-          "- Standard CSS selectors also work (e.g., #search-box, .submit-button)\n" +
-          "- Don't make up selectors that don't exist in the HTML\n\n" +
+          "- CAREFULLY EXAMINE BOTH the screenshot AND the HTML source code to find correct selectors\n" +
+          "- For text-based selection, use: text=\"Text to find\" (e.g., text=\"Accept cookies\")\n" +
+          "- For standard CSS selectors, look in the HTML for specific attributes:\n" +
+          "  * id attributes (e.g., input[id=\"APjFqb\"], #APjFqb)\n" +
+          "  * name attributes (e.g., input[name=\"q\"])\n" +
+          "  * type attributes (e.g., input[type=\"text\"])\n" +
+          "  * class attributes (e.g., input[class*=\"gLFyf\"], .gLFyf)\n" +
+          "- For search boxes specifically, look for inputs with type=\"search\" or name=\"q\"\n" +
+          "- NEVER invent selectors - always use the exact selector you find in the HTML\n" +
+          "- If you can't find the element by standard selectors, use text selection instead\n\n" +
+          "Google-specific guidance:\n" +
+          "- Google's search input often has id=\"APjFqb\" or name=\"q\" or class containing \"gLFyf\"\n" +
+          "- Search button often has class containing \"gNO89b\" or svg icon inside a button\n" +
+          "- Search results are usually links with class containing \"LC20lb\"\n\n" +
           "When you believe you have completed the goal, respond with \"GOAL_ACHIEVED\" as your action."
       };
 
