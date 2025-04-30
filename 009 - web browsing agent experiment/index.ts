@@ -89,6 +89,97 @@ Here's the output schema:
 \`\`\`
 `;
 
+// Function to extract the most relevant parts of HTML for analysis
+function extractRelevantHtml(html: string): string {
+  try {
+    // If HTML is small enough, return it intact
+    if (html.length < 2000) return html;
+    
+    // Extract the title
+    const titleMatch = /<title>(.*?)<\/title>/i.exec(html);
+    const title = titleMatch ? titleMatch[1] : 'Unknown Page';
+    
+    // Create a focused structure report with only the most essential elements
+    let structureReport = `
+<html>
+<head><title>${title}</title></head>
+<body>
+<h1>HTML Structure Report (Full HTML was ${html.length} characters)</h1>
+
+<h2>Key Interactive Elements</h2>
+<ul>
+`;
+    
+    // Prioritize search elements, forms, and main navigation
+    const searchPattern = /<input[^>]*type=["']?search["']?[^>]*>/gi;
+    const formActionPattern = /<form[^>]*action=["']([^"']*)["'][^>]*>/gi;
+    const mainButtonPattern = /<button[^>]*id=["']([^"']*)["'][^>]*>(.*?)<\/button>/gi;
+    const navPattern = /<nav[^>]*>([\s\S]*?)<\/nav>/gi;
+    
+    // Find search boxes - these are critical for Google
+    let searchMatch;
+    let foundElements = 0;
+    while ((searchMatch = searchPattern.exec(html)) !== null && foundElements < 5) {
+      structureReport += `<li>Search: ${searchMatch[0].substring(0, 100)}</li>\n`;
+      foundElements++;
+    }
+    
+    // Find forms with actions
+    let formMatch;
+    foundElements = 0;
+    while ((formMatch = formActionPattern.exec(html)) !== null && foundElements < 5) {
+      structureReport += `<li>Form with action: ${formMatch[1]}</li>\n`;
+      foundElements++;
+    }
+    
+    // Find buttons with IDs (these are likely important)
+    let buttonMatch;
+    foundElements = 0;
+    while ((buttonMatch = mainButtonPattern.exec(html)) !== null && foundElements < 5) {
+      const buttonId = buttonMatch[1];
+      const buttonText = buttonMatch[0].match(/>([^<]*)</)?.[1] || '';
+      structureReport += `<li>Button ID=${buttonId}: ${buttonText}</li>\n`;
+      foundElements++;
+    }
+    
+    // If we have very few elements, try to add some more generic ones
+    if (foundElements < 5) {
+      const genericButtonPattern = /<button[^>]*>(.*?)<\/button>/gi;
+      const inputPattern = /<input[^>]*>/gi;
+      
+      // Add a few generic buttons
+      foundElements = 0;
+      while ((buttonMatch = genericButtonPattern.exec(html)) !== null && foundElements < 5) {
+        const buttonText = buttonMatch[0].match(/>([^<]*)</)?.[1] || '';
+        structureReport += `<li>Button: ${buttonText || buttonMatch[0].substring(0, 50)}</li>\n`;
+        foundElements++;
+      }
+      
+      // Add a few inputs
+      foundElements = 0;
+      let inputMatch;
+      while ((inputMatch = inputPattern.exec(html)) !== null && foundElements < 5) {
+        structureReport += `<li>Input: ${inputMatch[0].substring(0, 100)}</li>\n`;
+        foundElements++;
+      }
+    }
+    
+    // Close the structure report
+    structureReport += `
+</ul>
+
+<h2>Page Structure</h2>
+<p>Token limit reached: only showing most important interactive elements. The model should rely primarily on the screenshot for visual layout and element identification.</p>
+</body>
+</html>`;
+    
+    return structureReport;
+  } catch (error) {
+    console.error('Error extracting relevant HTML:', error);
+    return `<html><body><p>Error processing HTML: ${String(error)}</p></body></html>`;
+  }
+}
+
 async function main() {
   const webAgent = new WebAgent();
   let currentStep = 1;
@@ -101,12 +192,13 @@ async function main() {
     console.log('Connecting to LM Studio...');
     const client = new LMStudioClient();
     
-    // Get the model
-    console.log('Loading Gemma 3 model...');
+    // Get the model with larger context length
+    console.log('Loading Gemma 3 model with extended context...');
+    const contextLength = 16000; // Increased context length
     const lmStudioModel = await client.llm.model("gemma-3-27b-it-qat");
     
-    // Create a LangChain model wrapper with increased context length
-    const model = new LMStudioChatModel("gemma-3-27b-it-qat", 24000);
+    // Create a LangChain model wrapper with the same increased context length
+    const model = new LMStudioChatModel("gemma-3-27b-it-qat", contextLength);
     await model.init();
     
     // Set up the Zod parser
@@ -184,7 +276,7 @@ async function main() {
       // Set up the chain
       const chain = RunnableSequence.from([
         {
-          html_source: () => pageSource
+          html_source: () => extractRelevantHtml(pageSource)
         },
         async (input) => {
           // Send to LM Studio with the image
@@ -305,12 +397,11 @@ async function main() {
           actionHistory += ` - Selector: ${result.parameters.selector}`;
           if (result.parameters.text) {
             actionHistory += `, Text: ${result.parameters.text}`;
+          } else if (result.parameters.key) {
+            actionHistory += ` - Key: ${result.parameters.key}`;
           }
-        } else if (result.parameters.key) {
-          actionHistory += ` - Key: ${result.parameters.key}`;
+          actionHistory += ` (${result.description.substring(0, 100)}${result.description.length > 100 ? '...' : ''})\n\n`;
         }
-        // Add a brief description and end with newline
-        actionHistory += ` (${result.description.substring(0, 100)}${result.description.length > 100 ? '...' : ''})\n\n`;
       } catch (error) {
         console.error(`Error executing action:`, error);
         actionResult = `Error: ${error instanceof Error ? error.message : String(error)}`;
