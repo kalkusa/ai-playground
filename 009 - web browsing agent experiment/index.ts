@@ -2,208 +2,96 @@ import { LMStudioClient } from "@lmstudio/sdk";
 import WebAgent from "./web-agent";
 import path from "path";
 import fs from "fs";
+import { z } from "zod";
+import { ChatPromptTemplate } from "@langchain/core/prompts";
+import { RunnableSequence } from "@langchain/core/runnables";
+import { StructuredOutputParser } from "langchain/output_parsers";
+import {
+  NavigateToTool,
+  ClickElementTool,
+  TypeTextTool,
+  PressKeyTool,
+  WaitForElementTool,
+  GetElementTextTool,
+  HandleCookieConsentTool,
+  delay
+} from "./tools";
+import { LMStudioChatModel } from "./models/lm-studio-chat-model";
 
-// Helper function to pause execution for a specified time
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+// Define the schema for the agent's action responses using Zod
+const ActionSchema = z.object({
+  description: z.string().describe("A detailed description of what you observe on the page and what action you're taking"),
+  action: z.enum([
+    "navigateTo",
+    "clickElement",
+    "typeText",
+    "pressKey",
+    "waitForElement", 
+    "getElementText",
+    "handleCookieConsent",
+    "GOAL_ACHIEVED"
+  ]).describe("The action to perform"),
+  parameters: z.object({
+    url: z.string().optional().describe("URL to navigate to (for navigateTo action)"),
+    selector: z.string().optional().describe("CSS selector to target an element (for clickElement, typeText, waitForElement, getElementText)"),
+    text: z.string().optional().describe("Text to type (for typeText action)"),
+    key: z.string().optional().describe("Key to press (for pressKey action)")
+  }).describe("Parameters for the selected action")
+});
 
-// Prompt describing how to use the WebAgent API
-const webAgentPrompt = `
-You are a web browsing assistant that helps users navigate and interact with websites.
-You have access to a WebAgent API that provides functions to interact with web pages using Puppeteer.
+// Create a TypeScript type from the Zod schema
+type ActionType = z.infer<typeof ActionSchema>;
 
-For each step, you will receive:
-1. A screenshot of the current webpage state
-2. The HTML source code of the webpage
+// Hardcoded format instructions to avoid template parsing issues
+const formatInstructionsString = `The output should be formatted as a JSON instance that conforms to the JSON schema below.
 
-Your task is to navigate through websites by examining both the screenshot and HTML source code to determine what actions to take next.
-The HTML source will help you identify the correct selectors to use for interacting with elements.
+As an example, for the schema {"properties": {"foo": {"title": "Foo", "description": "a list of strings", "type": "array", "items": {"type": "string"}}}, "required": ["foo"]}
+one possible JSON instance would be {"foo": ["bar", "baz"]}
 
-IMPORTANT: Many websites show cookie consent popups, ads, or modal windows when you first visit them.
-- ALWAYS check for and handle these popups FIRST before attempting other actions
-- For cookie consent banners, look for buttons with text like "Accept", "Accept all", "I agree", "Okay", etc.
-- Common selectors for cookie buttons: "#accept-cookies", ".cookie-accept", "[aria-label='accept cookies']", "button:contains('Accept')"
-- If you see a popup or modal that blocks the main content, find a way to close it first
-
-CURRENT GOAL: Navigate to google.com, type "AI" in the search box, click the search button or press Enter to search, and then click on the first search result.
-
-For each step, provide TWO parts in your response:
-1. DESCRIPTION: Describe what you see on the current page and explain what you plan to do next to progress toward the goal.
-2. ACTION: Provide the exact action command to execute.
-
-Format your response like this:
-DESCRIPTION: [Your description of what you see and what you plan to do]
-ACTION: [action_command]
-
-Here are the functions available in the WebAgent API:
-
-1. navigateTo(url: string)
-   - Navigates to the specified URL
-   - Example: "navigateTo:https://www.google.com"
-
-2. clickElement(selector: string)
-   - Clicks on an element matching the provided CSS selector
-   - Example: "clickElement:#search-button"
-   - USE THE HTML SOURCE to find the correct selector
-
-3. typeText(selector: string, text: string)
-   - Types text into an input field matching the provided CSS selector
-   - Example: "typeText:input[name='q'],AI"
-   - USE THE HTML SOURCE to find the correct selector
-
-4. pressKey(key: string)
-   - Presses a specific key on the keyboard (Enter, Tab, ArrowDown, etc.)
-   - Example: "pressKey:Enter"
-
-5. waitForElement(selector: string)
-   - Waits for an element matching the selector to appear on the page
-   - Example: "waitForElement:.results-container"
-   - USE THE HTML SOURCE to find the correct selector
-
-6. getElementText(selector: string)
-   - Gets the text content from an element matching the provided selector
-   - Example: "getElementText:h1"
-   - USE THE HTML SOURCE to find the correct selector
-
-7. handleCookieConsent()
-   - Automatically attempts to detect and accept cookie consent dialogs
-   - Example: "handleCookieConsent:"
-   - This will try various common selectors for cookie consent buttons
-   - ALWAYS try this when first loading a new page, especially Google
-
-DO NOT make up selectors. ANALYZE the HTML source code to find exact selectors that exist in the document.
-Look for id, name, class attributes, and HTML structure to determine the correct selectors.
-
-COOKIE POPUP EXAMPLES:
-- If you see "Weiter ohne Zustimmen" (Continue without agreeing) in German, use clickElement with that button's selector
-- If there are "Accept All" or "Accept Cookies" buttons, click those first
-- Look for buttons with class names containing "consent", "cookie", "accept", "agree", etc.
-- Or simply use the handleCookieConsent: action which will try common selectors automatically
-
-This is CRITICAL: When you are on the Google homepage, before looking for the search box, FIRST handle any cookie consent dialogs by using handleCookieConsent: or clicking the specific consent button.
-
-When you believe you have completed the goal, respond with "GOAL_ACHIEVED" as your action.
+Here's the output schema:
+\`\`\`json
+{
+  "type": "object",
+  "properties": {
+    "description": {
+      "type": "string",
+      "description": "A detailed description of what you observe on the page and what action you're taking"
+    },
+    "action": {
+      "enum": ["navigateTo", "clickElement", "typeText", "pressKey", "waitForElement", "getElementText", "handleCookieConsent", "GOAL_ACHIEVED"],
+      "description": "The action to perform"
+    },
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "URL to navigate to (for navigateTo action)"
+        },
+        "selector": {
+          "type": "string", 
+          "description": "CSS selector to target an element (for clickElement, typeText, waitForElement, getElementText)"
+        },
+        "text": {
+          "type": "string",
+          "description": "Text to type (for typeText action)"
+        },
+        "key": {
+          "type": "string",
+          "description": "Key to press (for pressKey action)"
+        }
+      },
+      "description": "Parameters for the selected action"
+    }
+  },
+  "required": ["description", "action", "parameters"]
+}
+\`\`\`
 `;
-
-// Function to parse the model's response to extract description and action
-function parseModelResponse(response: string): { description: string, action: string } {
-  const descriptionMatch = response.match(/DESCRIPTION:\s*([\s\S]*?)(?=ACTION:|$)/i);
-  const actionMatch = response.match(/ACTION:\s*(.*?)(?=$|\n)/i);
-  
-  const description = descriptionMatch ? descriptionMatch[1].trim() : "";
-  const action = actionMatch ? actionMatch[1].trim() : "";
-  
-  return { description, action };
-}
-
-async function executeAction(webAgent: WebAgent, action: string, stepNumber: number): Promise<{screenshotPath: string, pageSource: string}> {
-  if (!action || typeof action !== 'string') {
-    throw new Error("Invalid action provided");
-  }
-
-  console.log(`Executing action: ${action}`);
-
-  if (action === "GOAL_ACHIEVED") {
-    console.log("Goal has been achieved!");
-    return { screenshotPath: "DONE", pageSource: "" };
-  }
-
-  // Parse the action string
-  const [command, ...params] = action.split(":");
-  const parameters = params.join(":").split(",");
-  const actionName = command.trim().toLowerCase();
-
-  try {
-    let screenshotName = `step_${stepNumber}_${actionName}`;
-    
-    switch (actionName) {
-      case "navigateto":
-        await webAgent.navigateTo(parameters[0]);
-        break;
-      
-      case "clickelement":
-        await webAgent.clickElement(parameters[0]);
-        break;
-      
-      case "typetext":
-        await webAgent.typeText(parameters[0], parameters.slice(1).join(","));
-        break;
-      
-      case "presskey":
-        await webAgent.pressKey(parameters[0] as any);
-        break;
-      
-      case "waitforelement":
-        await webAgent.waitForElement(parameters[0]);
-        break;
-      
-      case "getelementtext":
-        const text = await webAgent.getElementText(parameters[0]);
-        console.log(`Text content: ${text}`);
-        break;
-        
-      case "handlecookieconsent":
-        const handled = await webAgent.handleCookieConsent();
-        screenshotName = `step_${stepNumber}_cookie_consent_${handled ? 'handled' : 'not_found'}`;
-        break;
-      
-      default:
-        console.warn(`Unknown command: ${command}`);
-        break;
-    }
-
-    // Add a pause after each action to give time for the page to update
-    console.log(`Pausing for 500ms...`);
-    await delay(500);
-    
-    // Take a screenshot after the action
-    const screenshotPath = await webAgent.takeScreenshot(screenshotName);
-    
-    // Get the page source after the action
-    console.log('Getting page source...');
-    const pageSource = await webAgent.getPageSource();
-    
-    // Save the HTML source to a file for reference
-    const htmlFileName = `${screenshotName}_source.html`;
-    const htmlFilePath = path.join('./screenshots', htmlFileName);
-    fs.writeFileSync(htmlFilePath, pageSource);
-    console.log(`Saved HTML source to: ${htmlFilePath}`);
-    
-    return { screenshotPath, pageSource };
-  } catch (error) {
-    console.error(`Error executing action: ${error}`);
-    // Take a screenshot even if the action failed
-    const errorScreenshotPath = await webAgent.takeScreenshot(`step_${stepNumber}_error_${actionName}`);
-    
-    // Try to get the page source even after an error
-    let errorPageSource = "";
-    try {
-      errorPageSource = await webAgent.getPageSource();
-      const htmlFileName = `step_${stepNumber}_error_${actionName}_source.html`;
-      const htmlFilePath = path.join('./screenshots', htmlFileName);
-      fs.writeFileSync(htmlFilePath, errorPageSource);
-    } catch (sourceError) {
-      console.error('Could not get page source after error:', sourceError);
-    }
-    
-    return { screenshotPath: errorScreenshotPath, pageSource: errorPageSource };
-  }
-}
-
-// Format HTML source for inclusion in prompts by truncating to a reasonable size
-function formatHtmlSource(html: string, maxLength: number = 5000): string {
-  if (html.length <= maxLength) return html;
-  
-  // Get first part of HTML (typically contains <head> and opening <body>)
-  const firstPart = html.substring(0, maxLength / 2);
-  
-  // Get last part of HTML (typically contains main content and closing tags)
-  const lastPart = html.substring(html.length - maxLength / 2);
-  
-  return `${firstPart}\n\n... [HTML truncated for brevity] ...\n\n${lastPart}`;
-}
 
 async function main() {
   const webAgent = new WebAgent();
+  let currentStep = 1;
   
   try {
     // Initialize the WebAgent with visible browser
@@ -215,157 +103,244 @@ async function main() {
     
     // Get the model
     console.log('Loading Gemma 3 model...');
-    const model = await client.llm.model("gemma-3-27b-it-qat");
+    const lmStudioModel = await client.llm.model("gemma-3-27b-it-qat");
+    
+    // Create a LangChain model wrapper
+    const model = new LMStudioChatModel("gemma-3-27b-it-qat");
+    await model.init();
+    
+    // Set up the Zod parser
+    const parser = StructuredOutputParser.fromZodSchema(ActionSchema);
     
     // Take an initial screenshot of blank page
     const initialScreenshotPath = await webAgent.takeScreenshot('step_0_initial_state');
     
     // Get initial page source (should be about:blank)
-    const initialPageSource = await webAgent.getPageSource();
+    let pageSource = await webAgent.getPageSource();
     
     // Save initial HTML source
-    fs.writeFileSync(path.join('./screenshots', 'step_0_initial_state_source.html'), initialPageSource);
+    fs.writeFileSync(path.join('./screenshots', 'step_0_initial_state_source.html'), pageSource);
     
     // Prepare the image file
     console.log('Preparing initial image...');
-    const initialImage = await client.files.prepareImage(path.resolve(initialScreenshotPath));
+    let currentImage = await client.files.prepareImage(path.resolve(initialScreenshotPath));
     
-    // Initial prompt to the model with initial screenshot and HTML
-    console.log(`Step 1: Asking model for first action...`);
-    
-    let result = await model.respond([{
-      role: "user",
-      content: `${webAgentPrompt}\n\nCurrent webpage state (screenshot and HTML):\n\nHTML Source:\n\`\`\`html\n${formatHtmlSource(initialPageSource)}\n\`\`\`\n\nProvide a description of what you see and the action to take. Format your response as specified with DESCRIPTION and ACTION sections.`,
-      images: [initialImage]
-    }]);
-    
-    let modelResponse = result.content.trim();
-    console.log("Model response:");
-    console.log(modelResponse);
-    
-    // Parse model response to get description and action
-    let { description, action } = parseModelResponse(modelResponse);
-    
-    // Display the model's description
-    console.log("\nModel's description:");
-    console.log(description);
-    console.log("\nModel's action:");
-    console.log(action);
-    
-    // Default to navigating to Google if the action is invalid
-    if (!action || !action.startsWith("navigateTo:")) {
-      action = "navigateTo:https://www.google.com";
-      console.log("Using default action:", action);
-    }
-    
-    let completedSteps = 1;
-    const MAX_STEPS = 10; // Safety limit to prevent infinite loops
+    // Variables to track state across iterations
+    let screenshotPath = initialScreenshotPath;
+    let actionResult = "Starting web agent...";
+    let actionHistory = "";
     
     // Main interaction loop
-    while (completedSteps <= MAX_STEPS) {
-      // Execute the action and get the path to the new screenshot and page source
-      const { screenshotPath, pageSource } = await executeAction(webAgent, action, completedSteps);
+    const MAX_STEPS = 10;
+    while (currentStep <= MAX_STEPS) {
+      console.log(`Step ${currentStep}...`);
       
-      if (screenshotPath === "DONE") {
+      // Create tools for the current step
+      const tools = [
+        new NavigateToTool(webAgent, currentStep),
+        new ClickElementTool(webAgent, currentStep),
+        new TypeTextTool(webAgent, currentStep),
+        new PressKeyTool(webAgent, currentStep),
+        new WaitForElementTool(webAgent, currentStep),
+        new GetElementTextTool(webAgent, currentStep),
+        new HandleCookieConsentTool(webAgent, currentStep)
+      ];
+      
+      // Create prompt messages directly without template parsing
+      const userMessage = {
+        role: "user" as const,
+        content: "Current webpage state (screenshot and HTML):\n\nHTML Source:\n```html\n{html_source}\n```\n\nBased on BOTH the screenshot AND the HTML source code, determine what action to take next to progress toward the goal."
+      };
+
+      const systemMessage = {
+        role: "system" as const,
+        content: "You are a web browsing assistant that helps users navigate and interact with websites. " +
+          "You have access to a WebAgent API that provides functions to interact with web pages using Puppeteer.\n\n" +
+          "IMPORTANT: Many websites show cookie consent popups, ads, or modal windows when you first visit them.\n" +
+          "- ALWAYS check for and handle these popups FIRST before attempting other actions\n" +
+          "- For cookie consent banners, look for buttons with text like \"Accept\", \"Accept all\", \"I agree\", \"Okay\", etc.\n" +
+          "- If you see a popup or modal that blocks the main content, find a way to close it first\n\n" +
+          (currentStep === 1 
+            ? "GOAL: Navigate to google.com, type \"AI\" in the search box, click the search button or press Enter to search, and then click on the first search result.\n\n"
+            : "PROGRESS TRACKING:\n" +
+              "- Goal: Navigate to google.com, type \"AI\" in the search box, click the search button or press Enter to search, and then click on the first search result.\n" +
+              `- Current step: ${currentStep}/${MAX_STEPS}\n` +
+              `- Previous actions:\n${actionHistory}\n` +
+              `Previous action result: ${actionResult}\n\n`) +
+          "For each step, you must provide:\n" +
+          "1. A detailed description of what you see on the page and what action you're taking\n" +
+          "2. The exact action to execute with appropriate parameters\n\n" +
+          formatInstructionsString + "\n\n" + 
+          "When working with selectors:\n" +
+          "- ALWAYS analyze the HTML source code to find exact selectors that exist in the document\n" +
+          "- Look for id, name, class attributes, and HTML structure to determine the correct selectors\n" +
+          "- Don't make up selectors that don't exist in the HTML\n\n" +
+          "When handling cookie consent dialogs:\n" +
+          "- Use the handleCookieConsent action to automatically detect and handle common consent patterns\n" +
+          "- If automatic handling fails, look for relevant accept buttons and click them directly\n\n" +
+          "When you believe you have completed the goal, respond with \"GOAL_ACHIEVED\" as your action."
+      };
+
+      // Set up the chain
+      const chain = RunnableSequence.from([
+        {
+          html_source: () => pageSource
+        },
+        async (input) => {
+          // Send to LM Studio with the image
+          return await lmStudioModel.respond([
+            {
+              ...systemMessage
+            },
+            {
+              ...userMessage,
+              content: userMessage.content.replace("{html_source}", input.html_source),
+              images: [currentImage]
+            }
+          ]);
+        },
+        async (response) => {
+          try {
+            const content = response.content;
+            console.log("Model response:", content);
+            
+            // Parse the response using the Zod schema
+            const parsedResponse = await parser.parse(content);
+            console.log("Parsed response:", JSON.stringify(parsedResponse, null, 2));
+            
+            // Save the description to a file
+            fs.writeFileSync(
+              path.join('./screenshots', `step_${currentStep}_description.txt`), 
+              parsedResponse.description
+            );
+            
+            return parsedResponse;
+          } catch (error) {
+            console.error("Error parsing model response:", error);
+            // Fall back to a default action if parsing fails
+            if (currentStep === 1) {
+              return {
+                description: "Failed to parse response, defaulting to navigating to Google",
+                action: "navigateTo" as const,
+                parameters: { url: "https://www.google.com" }
+              } satisfies ActionType;
+            } else {
+              // If we can't parse the response in later steps, assume we've reached the goal
+              return {
+                description: "Failed to parse response, assuming goal achieved",
+                action: "GOAL_ACHIEVED" as const,
+                parameters: {}
+              } satisfies ActionType;
+            }
+          }
+        }
+      ]);
+      
+      // Execute the chain for this step
+      console.log(`Executing chain for step ${currentStep}...`);
+      const result = await chain.invoke({}) as ActionType;
+      
+      console.log(`Step ${currentStep} action: ${result.action}`);
+      
+      // Check if the goal has been achieved
+      if (result.action === "GOAL_ACHIEVED") {
         console.log("Goal achieved! Task completed successfully.");
-        await webAgent.takeScreenshot(`step_${completedSteps}_goal_achieved`);
+        await webAgent.takeScreenshot(`step_${currentStep}_goal_achieved`);
         break;
       }
       
-      // Prepare the new screenshot for the model
-      const newImage = await client.files.prepareImage(path.resolve(screenshotPath));
-      
-      // Get next action from model
-      console.log(`Step ${completedSteps + 1}: Asking model for next action based on screenshot and HTML...`);
-      
-      // Take a screenshot of the decision-making step
-      await webAgent.takeScreenshot(`step_${completedSteps}_decision`);
-      
-      // Add a pause before asking the model for the next action
-      console.log(`Pausing for 500ms before next step...`);
-      await delay(500);
-
-      // Create a prompt for the next action
-      const formattedHtml = formatHtmlSource(pageSource);
-      
-      const nextPrompt = `Here's the screenshot and HTML after the action: "${action}".
-
-HTML Source:
-\`\`\`html
-${formattedHtml}
-\`\`\`
-
-Based on BOTH the screenshot AND the HTML source code:
-1. Describe what you see on the current page and what you plan to do next to progress toward the goal.
-2. Provide the exact action command to execute.
-
-Remember our goal: Navigate to google.com, type "AI" in the search box, click the search button or press Enter to search, and then click on the first search result.
-
-Format your response like this:
-DESCRIPTION: [Your description of what you see and what you plan to do]
-ACTION: [action_command]
-
-If you believe you have completed the goal, respond with "GOAL_ACHIEVED" as your action.`;
-      
-      result = await model.respond([{
-        role: "user",
-        content: nextPrompt,
-        images: [newImage]
-      }]);
-      
-      modelResponse = result.content.trim();
-      console.log("Model response:");
-      console.log(modelResponse);
-      
-      // Parse model response to get description and action
-      ({ description, action } = parseModelResponse(modelResponse));
-      
-      // Display the model's description
-      console.log("\nModel's description:");
-      console.log(description);
-      console.log("\nModel's action:");
-      console.log(action);
-      
-      // Save the description to a file
-      fs.writeFileSync(
-        path.join('./screenshots', `step_${completedSteps}_description.txt`), 
-        description
-      );
-      
-      // If action is invalid, provide guidance
-      if (!action) {
-        console.log("No valid action found in model response. Asking for clarification...");
+      // Execute the action based on the parsed response
+      try {
+        // Execute the appropriate tool based on the action
+        const tool = tools.find(t => t.name === result.action);
+        if (!tool) {
+          throw new Error(`Unknown action: ${result.action}`);
+        }
         
-        result = await model.respond([{
-          role: "user",
-          content: `I couldn't determine the action from your previous response. Please provide a clear action in the format "ACTION: command" where command is one of: navigateTo, clickElement, typeText, pressKey, waitForElement, getElementText, or handleCookieConsent.`,
-          images: [newImage]
-        }]);
+        // Prepare the tool arguments based on the parameters
+        let toolArgs = "";
+        switch (result.action) {
+          case "navigateTo":
+            toolArgs = result.parameters.url || "";
+            break;
+          case "clickElement":
+          case "waitForElement":
+          case "getElementText":
+            toolArgs = result.parameters.selector || "";
+            break;
+          case "typeText":
+            toolArgs = JSON.stringify({
+              selector: result.parameters.selector || "",
+              text: result.parameters.text || ""
+            });
+            break;
+          case "pressKey":
+            toolArgs = result.parameters.key || "";
+            break;
+          case "handleCookieConsent":
+            toolArgs = "";
+            break;
+        }
         
-        modelResponse = result.content.trim();
-        console.log("Model's clarified response:");
-        console.log(modelResponse);
+        // Call the tool
+        actionResult = await tool._call(toolArgs);
+        console.log("Action result:", actionResult);
         
-        // Parse model response again
-        ({ description, action } = parseModelResponse(modelResponse));
+        // Take a screenshot of the current state
+        screenshotPath = await webAgent.takeScreenshot(`step_${currentStep}_after_action`);
         
-        console.log("\nModel's clarified action:");
-        console.log(action);
+        // Get the page source
+        pageSource = await webAgent.getPageSource();
         
-        // If still no valid action, use a default
-        if (!action) {
-          action = "GOAL_ACHIEVED"; // Assume the goal is achieved if no action is provided
-          console.log("Still no valid action. Assuming goal is achieved.");
+        // Save the HTML source to a file
+        const htmlFileName = `step_${currentStep}_after_action_source.html`;
+        const htmlFilePath = path.join('./screenshots', htmlFileName);
+        fs.writeFileSync(htmlFilePath, pageSource);
+        
+        // Update action history
+        actionHistory += `Step ${currentStep}: ${result.action}`;
+        if (result.parameters.url) {
+          actionHistory += ` - URL: ${result.parameters.url}`;
+        } else if (result.parameters.selector) {
+          actionHistory += ` - Selector: ${result.parameters.selector}`;
+          if (result.parameters.text) {
+            actionHistory += `, Text: ${result.parameters.text}`;
+          }
+        } else if (result.parameters.key) {
+          actionHistory += ` - Key: ${result.parameters.key}`;
+        }
+        // Add a brief description and end with newline
+        actionHistory += ` (${result.description.substring(0, 100)}${result.description.length > 100 ? '...' : ''})\n\n`;
+      } catch (error) {
+        console.error(`Error executing action:`, error);
+        actionResult = `Error: ${error instanceof Error ? error.message : String(error)}`;
+        
+        // Take an error screenshot
+        screenshotPath = await webAgent.takeScreenshot(`step_${currentStep}_error`);
+        
+        // Try to get the page source even after an error
+        try {
+          pageSource = await webAgent.getPageSource();
+          const htmlFileName = `step_${currentStep}_error_source.html`;
+          const htmlFilePath = path.join('./screenshots', htmlFileName);
+          fs.writeFileSync(htmlFilePath, pageSource);
+        } catch (sourceError) {
+          console.error('Could not get page source after error:', sourceError);
         }
       }
       
-      completedSteps++;
+      // Prepare for the next step
+      console.log('Preparing next image...');
+      currentImage = await client.files.prepareImage(path.resolve(screenshotPath));
+      
+      // Increment the step counter
+      currentStep++;
     }
     
-    if (completedSteps > MAX_STEPS) {
+    if (currentStep > MAX_STEPS) {
       console.log("Maximum number of steps reached. Task did not complete.");
       // Take a final screenshot
-      await webAgent.takeScreenshot(`step_${completedSteps}_max_steps_reached`);
+      await webAgent.takeScreenshot(`step_${currentStep}_max_steps_reached`);
     }
     
   } catch (error) {
@@ -376,7 +351,4 @@ If you believe you have completed the goal, respond with "GOAL_ACHIEVED" as your
   }
 }
 
-main().catch(console.error);
-
-// Export for testing/importing
-export { webAgentPrompt, main }; 
+main().catch(console.error); 
