@@ -119,22 +119,35 @@ export function getInteractiveElementList(html: string): string {
     // Extract input fields
     result += `### Input Fields\n`;
     
-    const inputRegex = /<input[^>]*>/gi;
+    // Input elements - Enhanced with special attention to textareas
+    const inputRegex = /<(input|textarea)[^>]*>/gi;
     let inputMatch;
     let inputFound = false;
     
     while ((inputMatch = inputRegex.exec(html)) !== null) {
       const inputTag = inputMatch[0];
+      const tagName = inputMatch[1].toLowerCase(); // input or textarea
       
-      // Skip buttons and hidden inputs
-      const typeMatch = /type=["']([^"']*)["']/i.exec(inputTag);
-      const inputType = typeMatch ? typeMatch[1].toLowerCase() : 'text';
-      
-      if (inputType === 'button' || inputType === 'submit' || inputType === 'hidden') {
-        continue;
+      // Skip buttons and hidden inputs (only for input tags)
+      if (tagName === 'input') {
+        const typeMatch = /type=["']([^"']*)["']/i.exec(inputTag);
+        const inputType = typeMatch ? typeMatch[1].toLowerCase() : 'text';
+        
+        if (inputType === 'button' || inputType === 'submit' || inputType === 'hidden') {
+          continue;
+        }
       }
       
       inputFound = true;
+      
+      // Get input type for either input or textarea
+      let inputType = 'text';
+      if (tagName === 'input') {
+        const typeMatch = /type=["']([^"']*)["']/i.exec(inputTag);
+        inputType = typeMatch ? typeMatch[1].toLowerCase() : 'text';
+      } else if (tagName === 'textarea') {
+        inputType = 'textarea';
+      }
       
       const idMatch = /id=["']([^"']*)["']/i.exec(inputTag);
       const nameMatch = /name=["']([^"']*)["']/i.exec(inputTag);
@@ -142,6 +155,7 @@ export function getInteractiveElementList(html: string): string {
       const placeholderMatch = /placeholder=["']([^"']*)["']/i.exec(inputTag);
       const valueMatch = /value=["']([^"']*)["']/i.exec(inputTag);
       const dataIdMatch = /data-id=["']([^"']*)["']/i.exec(inputTag);
+      const ariaLabelMatch = /aria-label=["']([^"']*)["']/i.exec(inputTag);
       
       // Look for a label that might be associated with this input
       let labelText = '';
@@ -153,18 +167,20 @@ export function getInteractiveElementList(html: string): string {
         }
       }
       
-      const description = labelText || placeholderMatch?.[1] || nameMatch?.[1] || idMatch?.[1] || inputType;
+      // Add aria-label to the possible description sources
+      const description = ariaLabelMatch?.[1] || labelText || placeholderMatch?.[1] || nameMatch?.[1] || idMatch?.[1] || (tagName === 'textarea' ? 'Textarea' : 'Input');
       
-      result += `- Input (${inputType}): "${description}"\n`;
-      result += `  - CSS: input[type="${inputType}"]`;
+      const inputTypeText = tagName === 'textarea' ? 'textarea' : `input (${inputType || 'text'})`;
+      result += `- ${inputTypeText}: "${description}"\n`;
+      result += `  - CSS: ${tagName}`;
       
       if (idMatch) {
         result += `\n  - ID Selector: #${idMatch[1]}`;
-        result += `\n  - Full Selector: input[id="${idMatch[1]}"]`;
+        result += `\n  - Full Selector: ${tagName}[id="${idMatch[1]}"]`;
       }
       
       if (nameMatch) {
-        result += `\n  - Name Selector: input[name="${nameMatch[1]}"]`;
+        result += `\n  - Name Selector: ${tagName}[name="${nameMatch[1]}"]`;
       }
       
       if (classMatch) {
@@ -178,11 +194,15 @@ export function getInteractiveElementList(html: string): string {
       }
       
       if (placeholderMatch) {
-        result += `\n  - Placeholder Selector: input[placeholder="${placeholderMatch[1]}"]`;
+        result += `\n  - Placeholder Selector: ${tagName}[placeholder="${placeholderMatch[1]}"]`;
       }
       
       if (dataIdMatch) {
         result += `\n  - Data-ID Selector: [data-id="${dataIdMatch[1]}"]`;
+      }
+      
+      if (ariaLabelMatch) {
+        result += `\n  - Aria-Label Selector: ${tagName}[aria-label="${ariaLabelMatch[1]}"]`;
       }
       
       result += '\n\n';

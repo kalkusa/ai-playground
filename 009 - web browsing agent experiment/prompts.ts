@@ -1,6 +1,8 @@
 // Hardcoded format instructions to avoid template parsing issues
 export const formatInstructionsString = `The output should be formatted as a JSON instance that conforms to the JSON schema below.
 
+IMPORTANT: Your response MUST ONLY contain the JSON object. Do not include any explanatory text before or after the JSON.
+
 As an example, for the schema {"properties": {"foo": {"title": "Foo", "description": "a list of strings", "type": "array", "items": {"type": "string"}}}, "required": ["foo"]}
 one possible JSON instance would be {"foo": ["bar", "baz"]}
 
@@ -64,6 +66,7 @@ export function createSystemMessage(
     role: "system" as const,
     content: "You are a web browsing assistant that helps users navigate and interact with websites. " +
       "You have access to a WebAgent API that provides functions to interact with web pages using Puppeteer.\n\n" +
+      "CRITICAL: ONLY RESPOND WITH VALID JSON following the format provided. DO NOT include any explanatory text, comments, or analysis outside of the JSON object.\n\n" +
       "IMPORTANT: Many websites show cookie consent popups, ads, or modal windows when you first visit them.\n" +
       "- When you see a cookie consent dialog, use the clickElement action with text=\"Accept\" or a similar selector\n" +
       "- To click a button with specific text, use selector format: text=\"Button Text\" (e.g., text=\"Accept all\")\n" +
@@ -90,10 +93,6 @@ export function createSystemMessage(
       "- For search boxes specifically, look for inputs with type=\"search\" or name=\"q\"\n" +
       "- NEVER invent selectors - always use the exact selector from the provided list\n" +
       "- Use the most specific and reliable selector available\n\n" +
-      "Google-specific guidance:\n" +
-      "- Google's search input often has id=\"APjFqb\" or name=\"q\" or class containing \"gLFyf\"\n" +
-      "- Search button often has type=\"submit\" or class containing \"gNO89b\"\n" +
-      "- Search results are usually links with text describing the result\n\n" +
       "When you believe you have completed the goal, respond with \"GOAL_ACHIEVED\" as your action."
   };
 }

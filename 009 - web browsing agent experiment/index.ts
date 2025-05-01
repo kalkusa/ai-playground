@@ -114,8 +114,12 @@ async function main() {
             const content = response.content;
             console.log("Model response:", content);
             
+            // Extract just the JSON part of the response
+            const jsonMatch = content.match(/(\{[\s\S]*\})/);
+            const jsonContent = jsonMatch ? jsonMatch[0] : content;
+            
             // Parse the response using the Zod schema
-            const parsedResponse = await parser.parse(content);
+            const parsedResponse = await parser.parse(jsonContent);
             console.log("Parsed response:", JSON.stringify(parsedResponse, null, 2));
             
             // Save the description to a file
