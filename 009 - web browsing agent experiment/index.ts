@@ -41,7 +41,7 @@ async function main() {
     //const lmStudioModel = await client.llm.model(modelName);
     const lmStudioModel = await client.llm.model(modelName, {
       config: {
-        contextLength: 30000,
+        contextLength: 10000,
         gpu: {
           ratio: 1.0,
         },

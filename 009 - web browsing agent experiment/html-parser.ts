@@ -665,9 +665,15 @@ export function getInteractiveElementList(html: string): string {
  * Simplifies HTML by removing header tag completely and cleaning the body
  * of script, style, noscript and other non-content tags.
  * @param html - The HTML string to simplify
+ * @param removeDataAttr - Whether to remove data-* attributes (default: true)
+ * @param removeAria - Whether to remove aria-* attributes (default: true)
  * @returns A simplified HTML string
  */
-export function getSimplifiedHtml(html: string): string {
+export function getSimplifiedHtml(
+  html: string, 
+  removeDataAttr: boolean = true, 
+  removeAria: boolean = true
+): string {
   try {
     // Remove the entire header section if it exists
     let simplified = html.replace(/<head[\s\S]*?<\/head>/i, '');
@@ -705,6 +711,16 @@ export function getSimplifiedHtml(html: string): string {
     // Also remove inline event handlers and javascript: URLs that might contain logic
     simplified = simplified.replace(/\s(on\w+)="[^"]*"/gi, ''); // Remove on* event handlers
     simplified = simplified.replace(/\shref="javascript:[^"]*"/gi, ' href="#"'); // Replace javascript: URLs
+    
+    // Remove data-* attributes if requested
+    if (removeDataAttr) {
+      simplified = simplified.replace(/\sdata-[a-zA-Z0-9_-]+="[^"]*"/gi, '');
+    }
+    
+    // Remove aria-* attributes if requested
+    if (removeAria) {
+      simplified = simplified.replace(/\saria-[a-zA-Z0-9_-]+="[^"]*"/gi, '');
+    }
     
     // Remove HTML comments
     simplified = simplified.replace(/<!--[\s\S]*?-->/g, '');
