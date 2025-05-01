@@ -100,5 +100,5 @@ export function createSystemMessage(
 // Standard user message template
 export const userMessageTemplate = {
   role: "user" as const,
-  content: "Current webpage interactive elements:\n\n{html_source}\n\nBased on the list of interactive elements above, determine what action to take next to progress toward the goal."
+  content: "Current webpage source code:\n\n{html_source}\n\nBased on the list of interactive elements above, determine what action to take next to progress toward the goal."
 }; 

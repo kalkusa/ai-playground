@@ -17,7 +17,7 @@ import {
 import { LMStudioChatModel } from "./models/lm-studio-chat-model";
 import { ActionSchema, ActionType } from "./schemas";
 import { createSystemMessage, userMessageTemplate } from "./prompts";
-import { getInteractiveElementList } from "./html-parser";
+import { getInteractiveElementList, getSimplifiedHtml } from "./html-parser";
 
 async function main() {
   const webAgent = new WebAgent();
@@ -33,13 +33,15 @@ async function main() {
     
     //const modelName = "gemma-3-27b-it-qat";
     //const modelName = "gemma-3-12b-it-qat";
-    const modelName = "phi-3.1-mini-128k-instruct";
+    //const modelName = "llama-4-scout-17b-16e-instruct";
+    const modelName = "mistral-nemo-instruct-2407";
+
     // Get the model with larger context length
     console.log(`Loading ${modelName} model...`);
     //const lmStudioModel = await client.llm.model(modelName);
     const lmStudioModel = await client.llm.model(modelName, {
       config: {
-        contextLength: 10000,
+        contextLength: 30000,
         gpu: {
           ratio: 1.0,
         },
@@ -93,7 +95,8 @@ async function main() {
       // Set up the chain
       const chain = RunnableSequence.from([
         {
-          html_source: () => getInteractiveElementList(pageSource)
+          //html_source: () => getInteractiveElementList(pageSource)
+          html_source: () => getSimplifiedHtml(pageSource)
         },
         async (input) => {
           // Send to LM Studio

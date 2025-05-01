@@ -659,4 +659,62 @@ export function getInteractiveElementList(html: string): string {
     console.error('Error extracting interactive elements:', error);
     return `Error extracting interactive elements: ${String(error)}`;
   }
+}
+
+/**
+ * Simplifies HTML by removing header tag completely and cleaning the body
+ * of script, style, noscript and other non-content tags.
+ * @param html - The HTML string to simplify
+ * @returns A simplified HTML string
+ */
+export function getSimplifiedHtml(html: string): string {
+  try {
+    // Remove the entire header section if it exists
+    let simplified = html.replace(/<head[\s\S]*?<\/head>/i, '');
+    
+    // Also remove any header tags that might be in the body
+    simplified = simplified.replace(/<header[\s\S]*?<\/header>/gi, '');
+    
+    // Remove various script and style tags
+    const tagsToRemove = [
+      'script',
+      'style',
+      'noscript',
+      'iframe',
+      'svg',
+      'canvas',
+      'object',
+      'embed',
+      'link',
+      'meta'
+    ];
+    
+    // Create a regex pattern to match all these tags
+    const tagPattern = new RegExp(
+      `<(${tagsToRemove.join('|')})([\\s\\S]*?)<\\/\\1>|<(${tagsToRemove.join('|')})([^>]*?)\\/>`, 
+      'gi'
+    );
+    
+    // Keep removing tags until no more matches are found (handles nested tags)
+    let prevHtml = '';
+    while (prevHtml !== simplified) {
+      prevHtml = simplified;
+      simplified = simplified.replace(tagPattern, '');
+    }
+    
+    // Also remove inline event handlers and javascript: URLs that might contain logic
+    simplified = simplified.replace(/\s(on\w+)="[^"]*"/gi, ''); // Remove on* event handlers
+    simplified = simplified.replace(/\shref="javascript:[^"]*"/gi, ' href="#"'); // Replace javascript: URLs
+    
+    // Remove HTML comments
+    simplified = simplified.replace(/<!--[\s\S]*?-->/g, '');
+    
+    // Remove excess whitespace
+    simplified = simplified.replace(/\s{2,}/g, ' ').trim();
+    
+    return simplified;
+  } catch (error) {
+    console.error('Error simplifying HTML:', error);
+    return html; // Return original if there's an error
+  }
 } 
