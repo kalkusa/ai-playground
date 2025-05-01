@@ -16,7 +16,7 @@ import {
 } from "./tools";
 import { LMStudioChatModel } from "./models/lm-studio-chat-model";
 import { ActionSchema, ActionType } from "./schemas";
-import { formatInstructionsString, createSystemMessage, userMessageTemplate } from "./prompts";
+import { createSystemMessage, userMessageTemplate } from "./prompts";
 import { getInteractiveElementList } from "./html-parser";
 
 async function main() {
@@ -33,7 +33,7 @@ async function main() {
     
     //const modelName = "gemma-3-27b-it-qat";
     //const modelName = "gemma-3-12b-it-qat";
-    const modelName = "deepseek-r1-distill-qwen-7b";
+    const modelName = "phi-3.1-mini-128k-instruct";
     // Get the model with larger context length
     console.log(`Loading ${modelName} model...`);
     //const lmStudioModel = await client.llm.model(modelName);
@@ -72,7 +72,7 @@ async function main() {
     let actionHistory = "";
     
     // Main interaction loop
-    const MAX_STEPS = 10;
+    const MAX_STEPS = 50;
     while (currentStep <= MAX_STEPS) {
       console.log(`Step ${currentStep}...`);
       

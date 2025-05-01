@@ -237,9 +237,24 @@ class WebAgent {
     }
 
     try {
-      // Create a timestamp for unique filenames but preserve the step naming format
-      const timestamp = new Date().toISOString().replace(/:/g, '-');
-      const filename = `${name}_${timestamp}.png`;
+      // Extract step number if present in the name (e.g., step_1_something -> 1)
+      let stepInfo = name;
+      const stepMatch = name.match(/step_(\d+)/);
+      if (stepMatch) {
+        stepInfo = stepMatch[1] + '-' + name.replace(/step_\d+_/, '');
+      }
+      
+      // Format date as YYYY-MM-DD-HH-MM-SS
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = String(now.getMonth() + 1).padStart(2, '0');
+      const day = String(now.getDate()).padStart(2, '0');
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      const seconds = String(now.getSeconds()).padStart(2, '0');
+      
+      // Create filename in requested format
+      const filename = `${year}-${month}-${day}-${hours}-${minutes}-${seconds}-${stepInfo}.png`;
       const screenshotPath = path.join(this.screenshotsDir, filename);
       
       console.log(`Taking screenshot: ${screenshotPath}`);
