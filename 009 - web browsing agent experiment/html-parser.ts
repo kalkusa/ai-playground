@@ -9,7 +9,258 @@ export function getInteractiveElementList(html: string): string {
     const title = titleMatch ? titleMatch[1] : 'Unknown Page';
     
     let result = `# Page: ${title}\n\n`;
-    result += `## Interactive Elements List\n\n`;
+    
+    // Extract URL from any canonical link
+    const canonicalRegex = /<link[^>]*rel=["']canonical["'][^>]*href=["']([^"']*)["'][^>]*>/i;
+    const canonicalMatch = canonicalRegex.exec(html);
+    if (canonicalMatch) {
+      result += `URL: ${canonicalMatch[1]}\n\n`;
+    }
+    
+    // Extract JSON-LD structured data if present
+    const jsonLdRegex = /<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi;
+    let jsonLdMatch;
+    let structuredDataFound = false;
+    
+    result += `## Structured Data\n`;
+    while ((jsonLdMatch = jsonLdRegex.exec(html)) !== null) {
+      try {
+        const jsonData = JSON.parse(jsonLdMatch[1].trim());
+        structuredDataFound = true;
+        
+        // Extract key information from the structured data
+        if (jsonData["@type"]) {
+          result += `- Type: ${jsonData["@type"]}\n`;
+        }
+        
+        if (jsonData.name) {
+          result += `- Name: "${jsonData.name}"\n`;
+        }
+        
+        if (jsonData.description) {
+          result += `- Description: "${jsonData.description.substring(0, 150)}${jsonData.description.length > 150 ? '...' : ''}"\n`;
+        }
+        
+        // Include other useful properties depending on the type
+        if (jsonData.offers) {
+          if (typeof jsonData.offers === 'object' && jsonData.offers.price) {
+            result += `- Price: ${jsonData.offers.price} ${jsonData.offers.priceCurrency || ''}\n`;
+          }
+        }
+        
+        if (jsonData.author) {
+          const authorName = typeof jsonData.author === 'object' ? jsonData.author.name : jsonData.author;
+          if (authorName) {
+            result += `- Author: ${authorName}\n`;
+          }
+        }
+        
+        result += `\n`;
+      } catch (e) {
+        // Ignore JSON parsing errors
+      }
+    }
+    
+    if (!structuredDataFound) {
+      result += `No structured data (JSON-LD) found on the page.\n`;
+    }
+    
+    // Extract page layout information
+    result += `\n## Page Layout Analysis\n`;
+    
+    // Check for common layout elements
+    const hasHeader = /<header[^>]*>/.test(html);
+    const hasFooter = /<footer[^>]*>/.test(html);
+    const hasAside = /<aside[^>]*>/.test(html);
+    const hasSidebar = /class=["'][^"']*\b(sidebar|side-bar)\b[^"']*["']/.test(html);
+    const hasArticle = /<article[^>]*>/.test(html);
+    const hasMain = /<main[^>]*>/.test(html);
+    
+    // Count sections and important containers
+    const sectionCount = (html.match(/<section[^>]*>/g) || []).length;
+    const divCount = (html.match(/<div[^>]*>/g) || []).length;
+    
+    // Determine if it's likely a single-column or multi-column layout
+    const columnClassRegex = /class=["'][^"']*\b(column|col-|grid-col)\b[^"']*["']/g;
+    const columnMatches = html.match(columnClassRegex) || [];
+    const likelyMultiColumn = columnMatches.length > 2;
+    
+    result += `Structural elements detected:\n`;
+    result += `- ${hasHeader ? '✓' : '✗'} Header section\n`;
+    result += `- ${hasMain ? '✓' : '✗'} Main content area\n`;
+    result += `- ${hasAside || hasSidebar ? '✓' : '✗'} Sidebar/Aside\n`;
+    result += `- ${hasFooter ? '✓' : '✗'} Footer section\n`;
+    result += `- ${hasArticle ? '✓' : '✗'} Article content\n`;
+    result += `- ${sectionCount} section elements\n`;
+    result += `- Layout appears to be ${likelyMultiColumn ? 'multi-column' : 'single-column'}\n`;
+    
+    // Check for forms and iframes which often indicate specific functionality
+    const formCount = (html.match(/<form[^>]*>/g) || []).length;
+    const iframeCount = (html.match(/<iframe[^>]*>/g) || []).length;
+    
+    if (formCount > 0) {
+      result += `- Contains ${formCount} form(s)\n`;
+    }
+    
+    if (iframeCount > 0) {
+      result += `- Contains ${iframeCount} iframe(s) (embedded content)\n`;
+    }
+    
+    // Extract page headings for context
+    result += `\n## Page Structure\n`;
+    
+    // Extract h1-h3 headings
+    const headingRegex = /<h([1-3])[^>]*>(.*?)<\/h\1>/gi;
+    let headingMatch;
+    let headingsFound = false;
+    
+    while ((headingMatch = headingRegex.exec(html)) !== null) {
+      headingsFound = true;
+      const headingLevel = headingMatch[1];
+      const headingText = headingMatch[2].replace(/<[^>]*>/g, '').trim();
+      
+      if (headingText) {
+        result += `${'#'.repeat(parseInt(headingLevel))} ${headingText}\n`;
+      }
+    }
+    
+    if (!headingsFound) {
+      result += `No main headings found.\n`;
+    }
+    
+    // Extract main paragraphs (limited to first 5 for brevity)
+    const paragraphRegex = /<p[^>]*>(.*?)<\/p>/gi;
+    let paragraphMatch;
+    let paragraphCount = 0;
+    const MAX_PARAGRAPHS = 5;
+    
+    result += `\n### Main Content Text:\n`;
+    while ((paragraphMatch = paragraphRegex.exec(html)) !== null && paragraphCount < MAX_PARAGRAPHS) {
+      const paragraphText = paragraphMatch[1].replace(/<[^>]*>/g, '').trim();
+      
+      if (paragraphText && paragraphText.length > 20) { // Only include substantial paragraphs
+        result += `- "${paragraphText.substring(0, 150)}${paragraphText.length > 150 ? '...' : ''}"\n`;
+        paragraphCount++;
+      }
+    }
+    
+    if (paragraphCount === 0) {
+      result += `No main paragraphs found.\n`;
+    }
+    
+    // Extract meta description if available
+    const metaDescriptionRegex = /<meta[^>]*name=["']description["'][^>]*content=["']([^"']*)["'][^>]*>/i;
+    const metaDescriptionMatch = metaDescriptionRegex.exec(html);
+    if (metaDescriptionMatch) {
+      result += `\n### Meta Description:\n"${metaDescriptionMatch[1]}"\n`;
+    }
+    
+    // Extract key labels and sections
+    result += `\n### Key Labels and Sections:\n`;
+    
+    // Find form elements with labels
+    const formElementsRegex = /<form[^>]*>([\s\S]*?)<\/form>/gi;
+    let formMatch;
+    let formsFound = false;
+    
+    while ((formMatch = formElementsRegex.exec(html)) !== null) {
+      formsFound = true;
+      const formContent = formMatch[1];
+      
+      // Look for a form title or heading inside the form
+      const formTitleRegex = /<h[1-4][^>]*>(.*?)<\/h[1-4]>/i;
+      const formTitleMatch = formTitleRegex.exec(formContent);
+      const formTitle = formTitleMatch ? formTitleMatch[1].replace(/<[^>]*>/g, '').trim() : 'Form';
+      
+      result += `- Form: "${formTitle}"\n`;
+      
+      // Extract labels inside the form
+      const labelRegex = /<label[^>]*>(.*?)<\/label>/gi;
+      let labelMatch;
+      let labelsFound = false;
+      
+      while ((labelMatch = labelRegex.exec(formContent)) !== null) {
+        const labelText = labelMatch[1].replace(/<[^>]*>/g, '').trim();
+        
+        if (labelText) {
+          labelsFound = true;
+          result += `  - Label: "${labelText}"\n`;
+        }
+      }
+      
+      if (!labelsFound) {
+        result += `  - No explicit labels found in form\n`;
+      }
+    }
+    
+    if (!formsFound) {
+      result += `- No forms detected on page\n`;
+    }
+    
+    // Extract main navigation/menu items
+    result += `\n### Navigation Items:\n`;
+    const navRegex = /<nav[^>]*>([\s\S]*?)<\/nav>/gi;
+    let navMatch;
+    let navFound = false;
+    
+    while ((navMatch = navRegex.exec(html)) !== null) {
+      navFound = true;
+      const navContent = navMatch[1];
+      
+      // Extract links from navigation
+      const navLinkRegex = /<a[^>]*>(.*?)<\/a>/gi;
+      let navLinkMatch;
+      let linksFound = false;
+      
+      while ((navLinkMatch = navLinkRegex.exec(navContent)) !== null) {
+        const linkText = navLinkMatch[1].replace(/<[^>]*>/g, '').trim();
+        
+        if (linkText) {
+          linksFound = true;
+          result += `- Nav link: "${linkText}"\n`;
+        }
+      }
+      
+      if (!linksFound) {
+        result += `- No clear navigation links found\n`;
+      }
+    }
+    
+    if (!navFound) {
+      // Try to find alternative navigation elements
+      const potentialMenuRegex = /<(ul|div)[^>]*(class|id)=["']([^"']*\b(menu|nav|navigation)\b[^"']*)["'][^>]*>([\s\S]*?)<\/\1>/gi;
+      let potentialMenuMatch;
+      let altNavFound = false;
+      
+      while ((potentialMenuMatch = potentialMenuRegex.exec(html)) !== null) {
+        altNavFound = true;
+        const menuContent = potentialMenuMatch[5];
+        
+        // Extract links from this potential menu
+        const menuLinkRegex = /<a[^>]*>(.*?)<\/a>/gi;
+        let menuLinkMatch;
+        let menuLinksFound = false;
+        
+        while ((menuLinkMatch = menuLinkRegex.exec(menuContent)) !== null) {
+          const linkText = menuLinkMatch[1].replace(/<[^>]*>/g, '').trim();
+          
+          if (linkText) {
+            menuLinksFound = true;
+            result += `- Menu link: "${linkText}"\n`;
+          }
+        }
+        
+        if (!menuLinksFound) {
+          result += `- Potential menu found but no clear links extracted\n`;
+        }
+      }
+      
+      if (!altNavFound) {
+        result += `- No clear navigation structure identified\n`;
+      }
+    }
+    
+    result += `\n## Interactive Elements List\n\n`;
     
     // Extract buttons
     result += `### Buttons\n`;
