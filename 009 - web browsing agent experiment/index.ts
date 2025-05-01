@@ -22,6 +22,7 @@ import { getInteractiveElementList, getSimplifiedHtml } from "./html-parser";
 async function main() {
   const webAgent = new WebAgent();
   let currentStep = 1;
+  let lmStudioModel: any = null;
   
   try {
     // Initialize the WebAgent with visible browser
@@ -39,7 +40,7 @@ async function main() {
     // Get the model with larger context length
     console.log(`Loading ${modelName} model...`);
     //const lmStudioModel = await client.llm.model(modelName);
-    const lmStudioModel = await client.llm.model(modelName, {
+    lmStudioModel = await client.llm.model(modelName, {
       config: {
         contextLength: 10000,
         gpu: {
@@ -268,9 +269,38 @@ async function main() {
   } catch (error) {
     console.error('Error in main function:', error);
   } finally {
-    // Always clean up WebAgent resources
-    await webAgent.cleanup();
+    console.log('Cleaning up resources...');
+    
+    // Clean up WebAgent resources
+    try {
+      await webAgent.cleanup();
+      console.log('WebAgent cleaned up successfully');
+    } catch (error) {
+      console.error('Error cleaning up WebAgent:', error);
+    }
+    
+    // Unload the model if it was loaded
+    if (lmStudioModel) {
+      try {
+        console.log('Unloading language model...');
+        await lmStudioModel.unload();
+        console.log('Language model unloaded successfully');
+      } catch (error) {
+        console.error('Error unloading language model:', error);
+      }
+    }
   }
 }
+
+// Setup handlers for graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('\nReceived SIGINT. Shutting down gracefully...');
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  console.log('\nReceived SIGTERM. Shutting down gracefully...');
+  process.exit(0);
+});
 
 main().catch(console.error);
