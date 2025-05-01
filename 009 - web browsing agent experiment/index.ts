@@ -13,6 +13,7 @@ import {
   PressKeyTool,
   WaitForElementTool,
   GetElementTextTool,
+  ClickAtCoordinatesTool,
   delay
 } from "./tools";
 import { LMStudioChatModel } from "./models/lm-studio-chat-model";
@@ -23,6 +24,7 @@ const ActionSchema = z.object({
   action: z.enum([
     "navigateTo",
     "clickElement",
+    "clickAtCoordinates",
     "typeText",
     "pressKey",
     "waitForElement", 
@@ -33,7 +35,9 @@ const ActionSchema = z.object({
     url: z.string().optional().describe("URL to navigate to (for navigateTo action)"),
     selector: z.string().optional().describe("CSS selector to target an element (for clickElement, typeText, waitForElement, getElementText)"),
     text: z.string().optional().describe("Text to type (for typeText action)"),
-    key: z.string().optional().describe("Key to press (for pressKey action)")
+    key: z.string().optional().describe("Key to press (for pressKey action)"),
+    x: z.number().optional().describe("X coordinate for coordinate-based clicking (for clickAtCoordinates action)"),
+    y: z.number().optional().describe("Y coordinate for coordinate-based clicking (for clickAtCoordinates action)")
   }).describe("Parameters for the selected action")
 });
 
@@ -56,7 +60,7 @@ Here's the output schema:
       "description": "A detailed description of what you observe on the page and what action you're taking"
     },
     "action": {
-      "enum": ["navigateTo", "clickElement", "typeText", "pressKey", "waitForElement", "getElementText", "GOAL_ACHIEVED"],
+      "enum": ["navigateTo", "clickElement", "clickAtCoordinates", "typeText", "pressKey", "waitForElement", "getElementText", "GOAL_ACHIEVED"],
       "description": "The action to perform"
     },
     "parameters": {
@@ -77,6 +81,14 @@ Here's the output schema:
         "key": {
           "type": "string",
           "description": "Key to press (for pressKey action)"
+        },
+        "x": {
+          "type": "number",
+          "description": "X coordinate for coordinate-based clicking (for clickAtCoordinates action)"
+        },
+        "y": {
+          "type": "number",
+          "description": "Y coordinate for coordinate-based clicking (for clickAtCoordinates action)"
         }
       },
       "description": "Parameters for the selected action"
@@ -205,6 +217,48 @@ function extractRelevantHtml(html: string): string {
   }
 }
 
+/**
+ * Function to remove the head section and keep only the full body content
+ * Also removes script and style blocks from the body
+ */
+function extractRelevantHtml2(html: string): string {
+  try {
+    // If HTML is small enough, return it intact
+    if (html.length < 5000) return html;
+    
+    // Extract the title for informational purposes
+    const titleMatch = /<title>(.*?)<\/title>/i.exec(html);
+    const title = titleMatch ? titleMatch[1] : 'Unknown Page';
+    
+    // Extract the body content
+    const bodyMatch = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(html);
+    let bodyContent = bodyMatch ? bodyMatch[1] : '';
+    
+    if (!bodyContent) {
+      console.warn('No body content found in HTML');
+      return html; // Return the original if no body found
+    }
+    
+    // Remove all script tags and their content
+    bodyContent = bodyContent.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+    
+    // Remove all style tags and their content
+    bodyContent = bodyContent.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+    
+    // Remove all inline styles
+    bodyContent = bodyContent.replace(/style=["'][^"']*["']/gi, '');
+    
+    // Create a simplified HTML with only the title and cleaned body content
+    return `<html>
+<head><title>${title}</title></head>
+<body>${bodyContent}</body>
+</html>`;
+  } catch (error) {
+    console.error('Error extracting body content:', error);
+    return `<html><body><p>Error processing HTML: ${String(error)}</p></body></html>`;
+  }
+}
+
 async function main() {
   const webAgent = new WebAgent();
   let currentStep = 1;
@@ -217,13 +271,22 @@ async function main() {
     console.log('Connecting to LM Studio...');
     const client = new LMStudioClient();
     
+    //const modelName = "gemma-3-27b-it-qat";
+    const modelName = "gemma-3-12b-it-qat";
     // Get the model with larger context length
-    console.log('Loading Gemma 3 model with extended context...');
-    const contextLength = 16000; // Increased context length
-    const lmStudioModel = await client.llm.model("gemma-3-27b-it-qat");
-    
+    console.log(`Loading ${modelName} model...`);
+    //const lmStudioModel = await client.llm.model(modelName);
+    const lmStudioModel = await client.llm.model(modelName, {
+      config: {
+        contextLength: 40000,
+        gpu: {
+          ratio: 0.5,
+        },
+      },
+    });
+   
     // Create a LangChain model wrapper with the same increased context length
-    const model = new LMStudioChatModel("gemma-3-27b-it-qat", contextLength);
+    const model = new LMStudioChatModel(modelName);
     await model.init();
     
     // Set up the Zod parser
@@ -256,6 +319,7 @@ async function main() {
       const tools = [
         new NavigateToTool(webAgent, currentStep),
         new ClickElementTool(webAgent, currentStep),
+        new ClickAtCoordinatesTool(webAgent, currentStep),
         new TypeTextTool(webAgent, currentStep),
         new PressKeyTool(webAgent, currentStep),
         new WaitForElementTool(webAgent, currentStep),
@@ -275,7 +339,8 @@ async function main() {
           "IMPORTANT: Many websites show cookie consent popups, ads, or modal windows when you first visit them.\n" +
           "- When you see a cookie consent dialog, use the clickElement action with text=\"Accept\" or a similar selector\n" +
           "- To click a button with specific text, use selector format: text=\"Button Text\" (e.g., text=\"Accept all\")\n" +
-          "- If a popup or modal blocks the main content, find a way to close it first\n\n" +
+          "- If a popup or modal blocks the main content, find a way to close it first\n" +
+          "- If you cannot find a selector for an element, you can use clickAtCoordinates to click at specific x,y coordinates on the page\n\n" +
           (currentStep === 1 
             ? "GOAL: Navigate to google.com, type \"AI\" in the search box, click the search button or press Enter to search, and then click on the first search result.\n\n"
             : "PROGRESS TRACKING:\n" +
@@ -297,7 +362,8 @@ async function main() {
           "  * class attributes (e.g., input[class*=\"gLFyf\"], .gLFyf)\n" +
           "- For search boxes specifically, look for inputs with type=\"search\" or name=\"q\"\n" +
           "- NEVER invent selectors - always use the exact selector you find in the HTML\n" +
-          "- If you can't find the element by standard selectors, use text selection instead\n\n" +
+          "- If you can't find the element by standard selectors, use text selection instead\n" +
+          "- If no selector or text method works, use clickAtCoordinates with the x,y position from the screenshot\n\n" +
           "Google-specific guidance:\n" +
           "- Google's search input often has id=\"APjFqb\" or name=\"q\" or class containing \"gLFyf\"\n" +
           "- Search button often has class containing \"gNO89b\" or svg icon inside a button\n" +
@@ -308,7 +374,9 @@ async function main() {
       // Set up the chain
       const chain = RunnableSequence.from([
         {
-          html_source: () => extractRelevantHtml(pageSource)
+          //html_source: () => extractRelevantHtml(pageSource)
+          //html_source: () => pageSource
+          html_source: () => extractRelevantHtml2(pageSource)
         },
         async (input) => {
           // Send to LM Studio with the image
@@ -392,6 +460,12 @@ async function main() {
           case "getElementText":
             toolArgs = result.parameters.selector || "";
             break;
+          case "clickAtCoordinates":
+            toolArgs = JSON.stringify({
+              x: result.parameters.x || 0,
+              y: result.parameters.y || 0
+            });
+            break;
           case "typeText":
             toolArgs = JSON.stringify({
               selector: result.parameters.selector || "",
@@ -429,6 +503,9 @@ async function main() {
           } else if (result.parameters.key) {
             actionHistory += ` - Key: ${result.parameters.key}`;
           }
+          actionHistory += ` (${result.description.substring(0, 100)}${result.description.length > 100 ? '...' : ''})\n\n`;
+        } else if (result.parameters.x !== undefined && result.parameters.y !== undefined) {
+          actionHistory += ` - Coordinates: (${result.parameters.x}, ${result.parameters.y})`;
           actionHistory += ` (${result.description.substring(0, 100)}${result.description.length > 100 ? '...' : ''})\n\n`;
         }
       } catch (error) {

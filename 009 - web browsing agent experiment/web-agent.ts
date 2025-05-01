@@ -308,6 +308,30 @@ class WebAgent {
       throw error;
     }
   }
+
+  /**
+   * Click at specific coordinates on the page
+   */
+  async clickAtCoordinates(x: number, y: number): Promise<void> {
+    if (!this.page) {
+      throw new Error('WebAgent not initialized. Call initialize() first.');
+    }
+
+    try {
+      console.log(`Clicking at coordinates: (${x}, ${y})`);
+      
+      // Move the mouse to the coordinates and click
+      await this.page.mouse.move(x, y);
+      await this.page.mouse.click(x, y);
+      
+      console.log(`Successfully clicked at coordinates: (${x}, ${y})`);
+      await this.takeScreenshot(`click_at_coordinates_${x}_${y}`);
+      
+    } catch (error) {
+      console.error(`Error clicking at coordinates (${x}, ${y}):`, error);
+      throw error;
+    }
+  }
 }
 
 export default WebAgent; 

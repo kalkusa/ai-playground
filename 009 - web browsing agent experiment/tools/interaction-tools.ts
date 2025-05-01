@@ -171,4 +171,47 @@ export class GetElementTextTool extends WebAgentTool {
       return `Error getting text from element ${selector}: ${error}`;
     }
   }
+}
+
+/**
+ * Tool for clicking at specific coordinates
+ */
+export class ClickAtCoordinatesTool extends WebAgentTool {
+  constructor(webAgent: WebAgent, stepNumber: number) {
+    super(
+      "clickAtCoordinates",
+      "Clicks at specific x,y coordinates on the page. Input should be a JSON object with x and y properties.",
+      webAgent,
+      stepNumber
+    );
+  }
+  
+  async _call(args: string): Promise<string> {
+    const { x, y } = JSON.parse(args);
+    console.log(`Executing clickAtCoordinates: (${x}, ${y})`);
+    try {
+      await this.webAgent.clickAtCoordinates(x, y);
+      
+      // Add a pause after the action
+      console.log(`Pausing for 500ms...`);
+      await delay(500);
+      
+      // Take a screenshot after the action
+      const screenshotName = `step_${this.stepNumber}_click_at_${x}_${y}`;
+      const screenshotPath = await this.webAgent.takeScreenshot(screenshotName);
+      
+      // Get the page source
+      const pageSource = await this.webAgent.getPageSource();
+      
+      // Save the HTML source to a file
+      const htmlFileName = `${screenshotName}_source.html`;
+      const htmlFilePath = path.join('./screenshots', htmlFileName);
+      fs.writeFileSync(htmlFilePath, pageSource);
+      
+      return `Successfully clicked at coordinates (${x}, ${y}). Screenshot saved to ${screenshotPath}`;
+    } catch (error) {
+      console.error(`Error clicking at coordinates (${x}, ${y}):`, error);
+      return `Error clicking at coordinates (${x}, ${y}): ${error}`;
+    }
+  }
 } 

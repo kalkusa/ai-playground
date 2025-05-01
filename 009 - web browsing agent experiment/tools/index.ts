@@ -7,7 +7,8 @@ import {
   ClickElementTool,
   TypeTextTool,
   PressKeyTool,
-  GetElementTextTool
+  GetElementTextTool,
+  ClickAtCoordinatesTool
 } from './interaction-tools';
 import { delay } from './utils';
 
@@ -24,6 +25,7 @@ export {
   TypeTextTool,
   PressKeyTool,
   GetElementTextTool,
+  ClickAtCoordinatesTool,
   
   // Utilities
   delay

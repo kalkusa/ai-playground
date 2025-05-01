@@ -7,14 +7,12 @@ export class LMStudioChatModel {
   private client: LMStudioClient;
   private modelName: string;
   private lmStudioModel: any;
-  private contextLength: number;
   private modelOptions: any;
 
-  constructor(modelName: string, contextLength: number = 16000) {
+  constructor(modelName: string) {
     this.client = new LMStudioClient();
     this.modelName = modelName;
     this.lmStudioModel = null;
-    this.contextLength = contextLength;
     this.modelOptions = {
       maxTokens: 4000,
       temperature: 0.7,
@@ -22,25 +20,9 @@ export class LMStudioChatModel {
     };
   }
 
-  /**
-   * Configures LM Studio to use a higher context length using environment variables
-   * as a workaround since the SDK doesn't support this directly
-   */
-  private async configureContextLength(): Promise<void> {
-    console.log(`Configuring LM Studio for ${this.contextLength} token context length`);
-    try {
-      // The LMStudio SDK doesn't support setting context length directly
-      // We'll use our custom wrapper parameters for response generation instead
-    } catch (error) {
-      console.warn("Failed to configure context length:", error);
-    }
-  }
-
   async init() {
-    // Configure context length before loading the model
-    await this.configureContextLength();
     
-    console.log(`Loading model ${this.modelName} with context length ${this.contextLength}`);
+    console.log(`Loading model ${this.modelName}`);
     this.lmStudioModel = await this.client.llm.model(this.modelName);
     
     return this;
@@ -68,9 +50,6 @@ export class LMStudioChatModel {
       // We're explicitly passing context length in the response parameters
       const response = await this.lmStudioModel.respond(formattedMessages, {
         ...this.modelOptions,
-        // Try to use the context length setting if LM Studio supports it
-        forceContextLength: this.contextLength,
-        contextWindow: this.contextLength
       });
       
       return response.content;
