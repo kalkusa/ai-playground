@@ -99,163 +99,395 @@ Here's the output schema:
 \`\`\`
 `;
 
-// Function to extract the most relevant parts of HTML for analysis
-function extractRelevantHtml(html: string): string {
-  try {
-    // If HTML is small enough, return it intact
-    if (html.length < 2000) return html;
-    
-    // Extract the title
-    const titleMatch = /<title>(.*?)<\/title>/i.exec(html);
-    const title = titleMatch ? titleMatch[1] : 'Unknown Page';
-    
-    // Create a simple report of interactive elements
-    let structureReport = `
-<html>
-<head><title>${title}</title></head>
-<body>
-<h1>HTML Structure Report for: ${title}</h1>
-<p>Full HTML was ${html.length} characters, showing only key elements.</p>
-
-<h2>Buttons</h2>
-<ul>
-`;
-    
-    // Extract buttons - these are the main interactive elements
-    const buttonPattern = /<button[^>]*>(.*?)<\/button>/gi;
-    let buttonMatch;
-    let buttonCount = 0;
-    
-    while ((buttonMatch = buttonPattern.exec(html)) !== null && buttonCount < 10) {
-      const buttonText = buttonMatch[1].replace(/<[^>]*>/g, '').trim(); // Strip inner HTML tags
-      structureReport += `<li>Button: ${buttonText || '[No text]'}</li>\n`;
-      buttonCount++;
-    }
-    
-    structureReport += `
-</ul>
-
-<h2>Form Fields</h2>
-<ul>
-`;
-    
-    // Extract input fields with their labels
-    const inputPattern = /<input[^>]*>/gi;
-    let inputMatch;
-    let inputCount = 0;
-    
-    while ((inputMatch = inputPattern.exec(html)) !== null && inputCount < 10) {
-      // Try to extract id or name attribute
-      const idMatch = /id=["']([^"']*)["']/i.exec(inputMatch[0]);
-      const nameMatch = /name=["']([^"']*)["']/i.exec(inputMatch[0]);
-      const typeMatch = /type=["']([^"']*)["']/i.exec(inputMatch[0]);
-      
-      const id = idMatch ? idMatch[1] : '';
-      const name = nameMatch ? nameMatch[1] : '';
-      const type = typeMatch ? typeMatch[1] : 'text';
-      
-      structureReport += `<li>${type} input: ${name || id || 'unnamed'}</li>\n`;
-      inputCount++;
-    }
-    
-    // Extract select elements
-    structureReport += `
-</ul>
-
-<h2>Select Dropdowns</h2>
-<ul>
-`;
-    
-    const selectPattern = /<select[^>]*>([\s\S]*?)<\/select>/gi;
-    let selectMatch;
-    let selectCount = 0;
-    
-    while ((selectMatch = selectPattern.exec(html)) !== null && selectCount < 5) {
-      const idMatch = /id=["']([^"']*)["']/i.exec(selectMatch[0]);
-      const nameMatch = /name=["']([^"']*)["']/i.exec(selectMatch[0]);
-      
-      const id = idMatch ? idMatch[1] : '';
-      const name = nameMatch ? nameMatch[1] : '';
-      
-      structureReport += `<li>Dropdown: ${name || id || 'unnamed'}</li>\n`;
-      selectCount++;
-    }
-    
-    // Add links
-    structureReport += `
-</ul>
-
-<h2>Key Links</h2>
-<ul>
-`;
-    
-    const linkPattern = /<a[^>]*href=["']([^"']*)["'][^>]*>(.*?)<\/a>/gi;
-    let linkMatch;
-    let linkCount = 0;
-    
-    while ((linkMatch = linkPattern.exec(html)) !== null && linkCount < 10) {
-      const url = linkMatch[1];
-      const text = linkMatch[2].replace(/<[^>]*>/g, '').trim(); // Strip inner HTML tags
-      
-      if (text && url && !url.startsWith('#')) { // Skip empty links and anchors
-        structureReport += `<li>${text}: ${url}</li>\n`;
-        linkCount++;
-      }
-    }
-    
-    structureReport += `
-</ul>
-
-<p>Note: This is a simplified view of the page. Use the screenshot to see the visual layout.</p>
-</body>
-</html>`;
-    
-    return structureReport;
-  } catch (error) {
-    console.error('Error extracting relevant HTML:', error);
-    return `<html><body><p>Error processing HTML: ${String(error)}</p></body></html>`;
-  }
-}
-
 /**
- * Function to remove the head section and keep only the full body content
- * Also removes script and style blocks from the body
+ * Extracts interactive elements from HTML and returns them in a structured format.
+ * This helps the LLM identify elements to interact with using selectors.
  */
-function extractRelevantHtml2(html: string): string {
+function getInteractiveElementList(html: string): string {
   try {
-    // If HTML is small enough, return it intact
-    if (html.length < 5000) return html;
-    
     // Extract the title for informational purposes
     const titleMatch = /<title>(.*?)<\/title>/i.exec(html);
     const title = titleMatch ? titleMatch[1] : 'Unknown Page';
     
-    // Extract the body content
-    const bodyMatch = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(html);
-    let bodyContent = bodyMatch ? bodyMatch[1] : '';
+    let result = `# Page: ${title}\n\n`;
+    result += `## Interactive Elements List\n\n`;
     
-    if (!bodyContent) {
-      console.warn('No body content found in HTML');
-      return html; // Return the original if no body found
+    // Extract buttons
+    result += `### Buttons\n`;
+    
+    // Regular button elements
+    const buttonRegex = /<button[^>]*>(.*?)<\/button>/gi;
+    let buttonMatch;
+    let buttonFound = false;
+    
+    while ((buttonMatch = buttonRegex.exec(html)) !== null) {
+      buttonFound = true;
+      const buttonTag = buttonMatch[0];
+      const buttonText = buttonMatch[1].replace(/<[^>]*>/g, '').trim();
+      
+      const idMatch = /id=["']([^"']*)["']/i.exec(buttonTag);
+      const dataIdMatch = /data-id=["']([^"']*)["']/i.exec(buttonTag);
+      const classMatch = /class=["']([^"']*)["']/i.exec(buttonTag);
+      const nameMatch = /name=["']([^"']*)["']/i.exec(buttonTag);
+      
+      result += `- Button: "${buttonText || '[No text]'}"\n`;
+      result += `  - CSS: button`;
+      
+      if (idMatch) {
+        result += `\n  - ID Selector: #${idMatch[1]}`;
+        result += `\n  - Full Selector: button[id="${idMatch[1]}"]`;
+      }
+      
+      if (dataIdMatch) {
+        result += `\n  - Data-ID Selector: [data-id="${dataIdMatch[1]}"]`;
+      }
+      
+      if (classMatch) {
+        const classes = classMatch[1].trim().split(/\s+/);
+        if (classes.length > 0) {
+          result += `\n  - Class Selector: .${classes[0]}`;
+          if (classes.length > 1) {
+            result += ` (additional classes: ${classes.slice(1).join(', ')})`;
+          }
+        }
+      }
+      
+      if (nameMatch) {
+        result += `\n  - Name Selector: button[name="${nameMatch[1]}"]`;
+      }
+      
+      if (buttonText) {
+        result += `\n  - Text Selector: text="${buttonText}"`;
+      }
+      
+      result += '\n\n';
     }
     
-    // Remove all script tags and their content
-    bodyContent = bodyContent.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '');
+    // Input elements (buttons)
+    const inputButtonRegex = /<input[^>]*type=["'](submit|button)["'][^>]*>/gi;
+    while ((buttonMatch = inputButtonRegex.exec(html)) !== null) {
+      buttonFound = true;
+      const buttonTag = buttonMatch[0];
+      
+      const valueMatch = /value=["']([^"']*)["']/i.exec(buttonTag);
+      const buttonText = valueMatch ? valueMatch[1] : '[No text]';
+      
+      const idMatch = /id=["']([^"']*)["']/i.exec(buttonTag);
+      const dataIdMatch = /data-id=["']([^"']*)["']/i.exec(buttonTag);
+      const classMatch = /class=["']([^"']*)["']/i.exec(buttonTag);
+      const nameMatch = /name=["']([^"']*)["']/i.exec(buttonTag);
+      const typeMatch = /type=["']([^"']*)["']/i.exec(buttonTag);
+      const type = typeMatch ? typeMatch[1] : 'submit';
+      
+      result += `- Input ${type} button: "${buttonText}"\n`;
+      result += `  - CSS: input[type="${type}"]`;
+      
+      if (idMatch) {
+        result += `\n  - ID Selector: #${idMatch[1]}`;
+        result += `\n  - Full Selector: input[id="${idMatch[1]}"]`;
+      }
+      
+      if (dataIdMatch) {
+        result += `\n  - Data-ID Selector: [data-id="${dataIdMatch[1]}"]`;
+      }
+      
+      if (classMatch) {
+        const classes = classMatch[1].trim().split(/\s+/);
+        if (classes.length > 0) {
+          result += `\n  - Class Selector: .${classes[0]}`;
+          if (classes.length > 1) {
+            result += ` (additional classes: ${classes.slice(1).join(', ')})`;
+          }
+        }
+      }
+      
+      if (nameMatch) {
+        result += `\n  - Name Selector: input[name="${nameMatch[1]}"]`;
+      }
+      
+      if (valueMatch) {
+        result += `\n  - Value Selector: input[value="${buttonText}"]`;
+        result += `\n  - Text Selector: text="${buttonText}"`;
+      }
+      
+      result += '\n\n';
+    }
     
-    // Remove all style tags and their content
-    bodyContent = bodyContent.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, '');
+    if (!buttonFound) {
+      result += `No button elements found.\n\n`;
+    }
     
-    // Remove all inline styles
-    bodyContent = bodyContent.replace(/style=["'][^"']*["']/gi, '');
+    // Extract input fields
+    result += `### Input Fields\n`;
     
-    // Create a simplified HTML with only the title and cleaned body content
-    return `<html>
-<head><title>${title}</title></head>
-<body>${bodyContent}</body>
-</html>`;
+    const inputRegex = /<input[^>]*>/gi;
+    let inputMatch;
+    let inputFound = false;
+    
+    while ((inputMatch = inputRegex.exec(html)) !== null) {
+      const inputTag = inputMatch[0];
+      
+      // Skip buttons and hidden inputs
+      const typeMatch = /type=["']([^"']*)["']/i.exec(inputTag);
+      const inputType = typeMatch ? typeMatch[1].toLowerCase() : 'text';
+      
+      if (inputType === 'button' || inputType === 'submit' || inputType === 'hidden') {
+        continue;
+      }
+      
+      inputFound = true;
+      
+      const idMatch = /id=["']([^"']*)["']/i.exec(inputTag);
+      const nameMatch = /name=["']([^"']*)["']/i.exec(inputTag);
+      const classMatch = /class=["']([^"']*)["']/i.exec(inputTag);
+      const placeholderMatch = /placeholder=["']([^"']*)["']/i.exec(inputTag);
+      const valueMatch = /value=["']([^"']*)["']/i.exec(inputTag);
+      const dataIdMatch = /data-id=["']([^"']*)["']/i.exec(inputTag);
+      
+      // Look for a label that might be associated with this input
+      let labelText = '';
+      if (idMatch) {
+        const labelForRegex = new RegExp(`<label[^>]*for=["']${idMatch[1]}["'][^>]*>(.*?)<\/label>`, 'i');
+        const labelMatch = labelForRegex.exec(html);
+        if (labelMatch) {
+          labelText = labelMatch[1].replace(/<[^>]*>/g, '').trim();
+        }
+      }
+      
+      const description = labelText || placeholderMatch?.[1] || nameMatch?.[1] || idMatch?.[1] || inputType;
+      
+      result += `- Input (${inputType}): "${description}"\n`;
+      result += `  - CSS: input[type="${inputType}"]`;
+      
+      if (idMatch) {
+        result += `\n  - ID Selector: #${idMatch[1]}`;
+        result += `\n  - Full Selector: input[id="${idMatch[1]}"]`;
+      }
+      
+      if (nameMatch) {
+        result += `\n  - Name Selector: input[name="${nameMatch[1]}"]`;
+      }
+      
+      if (classMatch) {
+        const classes = classMatch[1].trim().split(/\s+/);
+        if (classes.length > 0) {
+          result += `\n  - Class Selector: .${classes[0]}`;
+          if (classes.length > 1) {
+            result += ` (additional classes: ${classes.slice(1).join(', ')})`;
+          }
+        }
+      }
+      
+      if (placeholderMatch) {
+        result += `\n  - Placeholder Selector: input[placeholder="${placeholderMatch[1]}"]`;
+      }
+      
+      if (dataIdMatch) {
+        result += `\n  - Data-ID Selector: [data-id="${dataIdMatch[1]}"]`;
+      }
+      
+      result += '\n\n';
+    }
+    
+    if (!inputFound) {
+      result += `No input elements found.\n\n`;
+    }
+    
+    // Extract links
+    result += `### Links\n`;
+    
+    const linkRegex = /<a[^>]*href=["']([^"']*)["'][^>]*>(.*?)<\/a>/gi;
+    let linkMatch;
+    let linkFound = false;
+    
+    while ((linkMatch = linkRegex.exec(html)) !== null) {
+      linkFound = true;
+      const linkTag = linkMatch[0];
+      const href = linkMatch[1];
+      const linkText = linkMatch[2].replace(/<[^>]*>/g, '').trim();
+      
+      if (!linkText || href.startsWith('javascript:') || href === '#') {
+        continue; // Skip empty links or JS links
+      }
+      
+      const idMatch = /id=["']([^"']*)["']/i.exec(linkTag);
+      const classMatch = /class=["']([^"']*)["']/i.exec(linkTag);
+      const dataIdMatch = /data-id=["']([^"']*)["']/i.exec(linkTag);
+      
+      result += `- Link: "${linkText}" (${href})\n`;
+      result += `  - CSS: a`;
+      
+      if (idMatch) {
+        result += `\n  - ID Selector: #${idMatch[1]}`;
+        result += `\n  - Full Selector: a[id="${idMatch[1]}"]`;
+      }
+      
+      if (dataIdMatch) {
+        result += `\n  - Data-ID Selector: [data-id="${dataIdMatch[1]}"]`;
+      }
+      
+      if (classMatch) {
+        const classes = classMatch[1].trim().split(/\s+/);
+        if (classes.length > 0) {
+          result += `\n  - Class Selector: .${classes[0]}`;
+          if (classes.length > 1) {
+            result += ` (additional classes: ${classes.slice(1).join(', ')})`;
+          }
+        }
+      }
+      
+      if (linkText) {
+        result += `\n  - Text Selector: text="${linkText}"`;
+      }
+      
+      if (href && !href.startsWith('#')) {
+        result += `\n  - Href Selector: a[href="${href}"]`;
+      }
+      
+      result += '\n\n';
+    }
+    
+    if (!linkFound) {
+      result += `No link elements found.\n\n`;
+    }
+    
+    // Extract select/dropdown elements
+    result += `### Dropdowns\n`;
+    
+    const selectRegex = /<select[^>]*>([\s\S]*?)<\/select>/gi;
+    let selectMatch;
+    let selectFound = false;
+    
+    while ((selectMatch = selectRegex.exec(html)) !== null) {
+      selectFound = true;
+      const selectTag = selectMatch[0];
+      const selectContent = selectMatch[1];
+      
+      const idMatch = /id=["']([^"']*)["']/i.exec(selectTag);
+      const nameMatch = /name=["']([^"']*)["']/i.exec(selectTag);
+      const classMatch = /class=["']([^"']*)["']/i.exec(selectTag);
+      const dataIdMatch = /data-id=["']([^"']*)["']/i.exec(selectTag);
+      
+      // Look for label for this select
+      let labelText = '';
+      if (idMatch) {
+        const labelForRegex = new RegExp(`<label[^>]*for=["']${idMatch[1]}["'][^>]*>(.*?)<\/label>`, 'i');
+        const labelMatch = labelForRegex.exec(html);
+        if (labelMatch) {
+          labelText = labelMatch[1].replace(/<[^>]*>/g, '').trim();
+        }
+      }
+      
+      const description = labelText || nameMatch?.[1] || idMatch?.[1] || 'Dropdown';
+      
+      result += `- Select dropdown: "${description}"\n`;
+      result += `  - CSS: select`;
+      
+      if (idMatch) {
+        result += `\n  - ID Selector: #${idMatch[1]}`;
+        result += `\n  - Full Selector: select[id="${idMatch[1]}"]`;
+      }
+      
+      if (nameMatch) {
+        result += `\n  - Name Selector: select[name="${nameMatch[1]}"]`;
+      }
+      
+      if (classMatch) {
+        const classes = classMatch[1].trim().split(/\s+/);
+        if (classes.length > 0) {
+          result += `\n  - Class Selector: .${classes[0]}`;
+        }
+      }
+      
+      if (dataIdMatch) {
+        result += `\n  - Data-ID Selector: [data-id="${dataIdMatch[1]}"]`;
+      }
+      
+      // Extract options
+      const optionRegex = /<option[^>]*value=["']([^"']*)["'][^>]*>(.*?)<\/option>/gi;
+      let optionMatch;
+      let optionsText = '\n  - Options:';
+      let optionsFound = false;
+      
+      while ((optionMatch = optionRegex.exec(selectContent)) !== null) {
+        optionsFound = true;
+        const value = optionMatch[1];
+        const text = optionMatch[2].replace(/<[^>]*>/g, '').trim();
+        optionsText += `\n    - "${text}" (value: ${value})`;
+      }
+      
+      if (optionsFound) {
+        result += optionsText;
+      }
+      
+      result += '\n\n';
+    }
+    
+    if (!selectFound) {
+      result += `No select dropdown elements found.\n\n`;
+    }
+    
+    // Extract clickable/interactive div elements
+    result += `### Clickable Divs/Spans\n`;
+    
+    const clickableDivRegex = /<(div|span)[^>]*(onclick|role=["'](button|link|tab|menuitem)["']|class=["'][^"']*\b(btn|button|clickable)\b[^"']*["'])[^>]*>(.*?)<\/\1>/gi;
+    let divMatch;
+    let divFound = false;
+    
+    while ((divMatch = clickableDivRegex.exec(html)) !== null) {
+      divFound = true;
+      const divTag = divMatch[0];
+      const tagName = divMatch[1]; // div or span
+      const divText = divMatch[5].replace(/<[^>]*>/g, '').trim();
+      
+      const idMatch = /id=["']([^"']*)["']/i.exec(divTag);
+      const classMatch = /class=["']([^"']*)["']/i.exec(divTag);
+      const roleMatch = /role=["']([^"']*)["']/i.exec(divTag);
+      const dataIdMatch = /data-id=["']([^"']*)["']/i.exec(divTag);
+      
+      const role = roleMatch ? roleMatch[1] : 'clickable';
+      
+      result += `- ${tagName.charAt(0).toUpperCase() + tagName.slice(1)} (${role}): "${divText || '[No text]'}"\n`;
+      result += `  - CSS: ${tagName}`;
+      
+      if (idMatch) {
+        result += `\n  - ID Selector: #${idMatch[1]}`;
+        result += `\n  - Full Selector: ${tagName}[id="${idMatch[1]}"]`;
+      }
+      
+      if (dataIdMatch) {
+        result += `\n  - Data-ID Selector: [data-id="${dataIdMatch[1]}"]`;
+      }
+      
+      if (classMatch) {
+        const classes = classMatch[1].trim().split(/\s+/);
+        if (classes.length > 0) {
+          result += `\n  - Class Selector: .${classes[0]}`;
+          if (classes.length > 1) {
+            result += ` (additional classes: ${classes.slice(1).join(', ')})`;
+          }
+        }
+      }
+      
+      if (roleMatch) {
+        result += `\n  - Role Selector: ${tagName}[role="${roleMatch[1]}"]`;
+      }
+      
+      if (divText) {
+        result += `\n  - Text Selector: text="${divText}"`;
+      }
+      
+      result += '\n\n';
+    }
+    
+    if (!divFound) {
+      result += `No clickable div/span elements found.\n\n`;
+    }
+    
+    return result;
   } catch (error) {
-    console.error('Error extracting body content:', error);
-    return `<html><body><p>Error processing HTML: ${String(error)}</p></body></html>`;
+    console.error('Error extracting interactive elements:', error);
+    return `Error extracting interactive elements: ${String(error)}`;
   }
 }
 
@@ -278,7 +510,7 @@ async function main() {
     //const lmStudioModel = await client.llm.model(modelName);
     const lmStudioModel = await client.llm.model(modelName, {
       config: {
-        contextLength: 40000,
+        contextLength: 20000,
         gpu: {
           ratio: 0.5,
         },
@@ -329,7 +561,7 @@ async function main() {
       // Create prompt messages directly without template parsing
       const userMessage = {
         role: "user" as const,
-        content: "Current webpage state (screenshot and HTML):\n\nHTML Source:\n```html\n{html_source}\n```\n\nBased on BOTH the screenshot AND the HTML source code, determine what action to take next to progress toward the goal."
+        content: "Current webpage interactive elements:\n\n{html_source}\n\nBased on the list of interactive elements above, determine what action to take next to progress toward the goal."
       };
 
       const systemMessage = {
@@ -339,8 +571,7 @@ async function main() {
           "IMPORTANT: Many websites show cookie consent popups, ads, or modal windows when you first visit them.\n" +
           "- When you see a cookie consent dialog, use the clickElement action with text=\"Accept\" or a similar selector\n" +
           "- To click a button with specific text, use selector format: text=\"Button Text\" (e.g., text=\"Accept all\")\n" +
-          "- If a popup or modal blocks the main content, find a way to close it first\n" +
-          "- If you cannot find a selector for an element, you can use clickAtCoordinates to click at specific x,y coordinates on the page\n\n" +
+          "- If a popup or modal blocks the main content, find a way to close it first\n\n" +
           (currentStep === 1 
             ? "GOAL: Navigate to google.com, type \"AI\" in the search box, click the search button or press Enter to search, and then click on the first search result.\n\n"
             : "PROGRESS TRACKING:\n" +
@@ -353,21 +584,20 @@ async function main() {
           "2. The exact action to execute with appropriate parameters\n\n" +
           formatInstructionsString + "\n\n" + 
           "When working with selectors:\n" +
-          "- CAREFULLY EXAMINE BOTH the screenshot AND the HTML source code to find correct selectors\n" +
+          "- CAREFULLY EXAMINE the provided list of interactive elements to find correct selectors\n" +
           "- For text-based selection, use: text=\"Text to find\" (e.g., text=\"Accept cookies\")\n" +
-          "- For standard CSS selectors, look in the HTML for specific attributes:\n" +
-          "  * id attributes (e.g., input[id=\"APjFqb\"], #APjFqb)\n" +
-          "  * name attributes (e.g., input[name=\"q\"])\n" +
-          "  * type attributes (e.g., input[type=\"text\"])\n" +
-          "  * class attributes (e.g., input[class*=\"gLFyf\"], .gLFyf)\n" +
+          "- For standard CSS selectors, look for these in the provided list:\n" +
+          "  * ID selectors (e.g., #APjFqb)\n" +
+          "  * Full selectors (e.g., input[id=\"APjFqb\"])\n" +
+          "  * Name selectors (e.g., input[name=\"q\"])\n" +
+          "  * Class selectors (e.g., .gLFyf)\n" +
           "- For search boxes specifically, look for inputs with type=\"search\" or name=\"q\"\n" +
-          "- NEVER invent selectors - always use the exact selector you find in the HTML\n" +
-          "- If you can't find the element by standard selectors, use text selection instead\n" +
-          "- If no selector or text method works, use clickAtCoordinates with the x,y position from the screenshot\n\n" +
+          "- NEVER invent selectors - always use the exact selector from the provided list\n" +
+          "- Use the most specific and reliable selector available\n\n" +
           "Google-specific guidance:\n" +
           "- Google's search input often has id=\"APjFqb\" or name=\"q\" or class containing \"gLFyf\"\n" +
-          "- Search button often has class containing \"gNO89b\" or svg icon inside a button\n" +
-          "- Search results are usually links with class containing \"LC20lb\"\n\n" +
+          "- Search button often has type=\"submit\" or class containing \"gNO89b\"\n" +
+          "- Search results are usually links with text describing the result\n\n" +
           "When you believe you have completed the goal, respond with \"GOAL_ACHIEVED\" as your action."
       };
 
@@ -376,7 +606,7 @@ async function main() {
         {
           //html_source: () => extractRelevantHtml(pageSource)
           //html_source: () => pageSource
-          html_source: () => extractRelevantHtml2(pageSource)
+          html_source: () => getInteractiveElementList(pageSource)
         },
         async (input) => {
           // Send to LM Studio with the image
@@ -386,8 +616,7 @@ async function main() {
             },
             {
               ...userMessage,
-              content: userMessage.content.replace("{html_source}", input.html_source),
-              images: [currentImage]
+              content: userMessage.content.replace("{html_source}", input.html_source)
             }
           ]);
         },
