@@ -14,7 +14,7 @@ export class LMStudioChatModel {
     this.modelName = modelName;
     this.lmStudioModel = null;
     this.modelOptions = {
-      maxTokens: 20000,
+      maxTokens: 5000,
       temperature: 0.3,
       topP: 0.9
     };
