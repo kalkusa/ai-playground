@@ -97,13 +97,15 @@ async function main() {
         },
         async (input) => {
           // Send to LM Studio
+          const content = userMessageTemplate.content.replace("{html_source}", input.html_source)
+          console.log("Sending prompt to LM Studio:", content);
           return await lmStudioModel.respond([
             {
               ...systemMessage
             },
             {
               ...userMessageTemplate,
-              content: userMessageTemplate.content.replace("{html_source}", input.html_source)
+              content
             }
           ]);
         },
