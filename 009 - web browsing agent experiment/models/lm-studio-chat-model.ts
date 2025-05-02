@@ -16,7 +16,7 @@ export class LMStudioChatModel {
     this.modelOptions = {
       maxTokens: 5000,
       temperature: 0.3,
-      topP: 0.9
+      //topP: 0.9
     };
   }
 

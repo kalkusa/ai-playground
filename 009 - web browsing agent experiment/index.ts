@@ -24,47 +24,50 @@ const MAX_TOKEN_COUNT = 8000;
 // Assuming approximately 4 characters per token for rough estimation
 const MAX_CHAR_LENGTH = MAX_TOKEN_COUNT * 4;
 
-async function main() {
-  const webAgent = new WebAgent();
-  let currentStep = 1;
-  let lmStudioModel: any = null;
-  let modelCleanupAttempted = false;
+// Global variables for cleanup
+let webAgent: WebAgent;
+let lmStudioModel: any = null;
+let modelCleanupAttempted = false;
+
+// Function to safely clean up resources
+const cleanupResources = async () => {
+  if (modelCleanupAttempted) return;
+  modelCleanupAttempted = true;
   
-  // Function to safely clean up resources
-  const cleanupResources = async () => {
-    if (modelCleanupAttempted) return;
-    modelCleanupAttempted = true;
-    
-    console.log('Cleaning up resources...');
-    
-    // Clean up WebAgent resources
+  console.log('Cleaning up resources...');
+  
+  // Clean up WebAgent resources
+  try {
+    await webAgent?.cleanup();
+    console.log('WebAgent cleaned up successfully');
+  } catch (error) {
+    console.error('Error cleaning up WebAgent:', error);
+  }
+  
+  // Unload the model if it was loaded
+  if (lmStudioModel) {
     try {
-      await webAgent.cleanup();
-      console.log('WebAgent cleaned up successfully');
+      console.log('Unloading language model...');
+      await lmStudioModel.unload();
+      console.log('Language model unloaded successfully');
     } catch (error) {
-      console.error('Error cleaning up WebAgent:', error);
-    }
-    
-    // Unload the model if it was loaded
-    if (lmStudioModel) {
+      console.error('Error unloading language model:', error);
+      // Try a more aggressive termination if unload fails
       try {
-        console.log('Unloading language model...');
-        await lmStudioModel.unload();
-        console.log('Language model unloaded successfully');
-      } catch (error) {
-        console.error('Error unloading language model:', error);
-        // Try a more aggressive termination if unload fails
-        try {
-          console.log('Attempting to force model termination...');
-          // This is a last resort - only do this if regular unloading fails
-          await lmStudioModel.terminate();
-          console.log('Model terminated successfully');
-        } catch (termError) {
-          console.error('Failed to terminate model:', termError);
-        }
+        console.log('Attempting to force model termination...');
+        // This is a last resort - only do this if regular unloading fails
+        await lmStudioModel.terminate();
+        console.log('Model terminated successfully');
+      } catch (termError) {
+        console.error('Failed to terminate model:', termError);
       }
     }
-  };
+  }
+};
+
+async function main() {
+  webAgent = new WebAgent();
+  let currentStep = 1;
   
   try {
     // Initialize the WebAgent with visible browser
@@ -76,6 +79,7 @@ async function main() {
     
     //const modelName = "gemma-3-27b-it-qat";
     //const modelName = "gemma-3-12b-it-qat";
+    //const modelName = "gemma-3-4b-it-qat";
     //const modelName = "llama-4-scout-17b-16e-instruct";
     const modelName = "mistral-nemo-instruct-2407";
 
@@ -86,7 +90,7 @@ async function main() {
       config: {
         contextLength: 15000,
         gpu: {
-          ratio: 1.0,
+          ratio: 0.2,
         },
       },
     });
@@ -120,7 +124,8 @@ async function main() {
     const MAX_STEPS = 50;
     while (currentStep <= MAX_STEPS) {
       console.log(`Step ${currentStep}...`);
-      
+      console.log("\n");
+
       // Create tools for the current step
       const tools = [
         new NavigateToTool(webAgent, currentStep),
@@ -191,20 +196,20 @@ async function main() {
           } catch (error) {
             console.error("Error parsing model response:", error);
             // Fall back to a default action if parsing fails
-            if (currentStep === 1) {
-              return {
-                description: "Failed to parse response, defaulting to navigating to Google",
-                action: "navigateTo" as const,
-                parameters: { url: "https://www.google.com" }
-              } satisfies ActionType;
-            } else {
-              // If we can't parse the response in later steps, assume we've reached the goal
-              return {
-                description: "Failed to parse response, assuming goal achieved",
-                action: "GOAL_ACHIEVED" as const,
-                parameters: {}
-              } satisfies ActionType;
-            }
+            // if (currentStep === 1) {
+            //   return {
+            //     description: "Failed to parse response, defaulting to navigating to Google",
+            //     action: "navigateTo" as const,
+            //     parameters: { url: "https://www.google.com" }
+            //   } satisfies ActionType;
+            // } else {
+            //   // If we can't parse the response in later steps, assume we've reached the goal
+            //   return {
+            //     description: "Failed to parse response, assuming goal achieved",
+            //     action: "GOAL_ACHIEVED" as const,
+            //     parameters: {}
+            //   } satisfies ActionType;
+            // }
           }
         }
       ]);
@@ -213,7 +218,12 @@ async function main() {
       console.log(`Executing chain for step ${currentStep}...`);
       const result = await chain.invoke({}) as ActionType;
       
-      console.log(`Step ${currentStep} action: ${result.action}`);
+      console.log(`--------------------------- Step ${currentStep} action: ${result.action}`);
+      console.log("\n");
+      console.log("\n");
+      console.log(`History: ${actionHistory}`);
+      console.log("\n");
+      console.log("\n");
       
       // Check if the goal has been achieved
       if (result.action === "GOAL_ACHIEVED") {
@@ -331,21 +341,25 @@ async function main() {
 // Setup handlers for graceful shutdown
 process.on('SIGINT', async () => {
   console.log('\nReceived SIGINT. Shutting down gracefully...');
+  await cleanupResources();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
   console.log('\nReceived SIGTERM. Shutting down gracefully...');
+  await cleanupResources();
   process.exit(0);
 });
 
 // Handle uncaught exceptions to ensure cleanup
 process.on('uncaughtException', async (error) => {
   console.error('Uncaught exception:', error);
+  await cleanupResources();
   process.exit(1);
 });
 
 main().catch(async (error) => {
   console.error('Unhandled error in main:', error);
+  await cleanupResources();
   process.exit(1);
 });
