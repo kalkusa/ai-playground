@@ -17,12 +17,54 @@ import {
 import { LMStudioChatModel } from "./models/lm-studio-chat-model";
 import { ActionSchema, ActionType } from "./schemas";
 import { createSystemMessage, userMessageTemplate } from "./prompts";
-import { getInteractiveElementList, getSimplifiedHtml } from "./html-parser";
+import { getInteractiveElementList, getSimplifiedHtml, trimHtmlContent } from "./html-parser";
+
+// Maximum token count to aim for (leave margin for safety)
+const MAX_TOKEN_COUNT = 8000;
+// Assuming approximately 4 characters per token for rough estimation
+const MAX_CHAR_LENGTH = MAX_TOKEN_COUNT * 4;
 
 async function main() {
   const webAgent = new WebAgent();
   let currentStep = 1;
   let lmStudioModel: any = null;
+  let modelCleanupAttempted = false;
+  
+  // Function to safely clean up resources
+  const cleanupResources = async () => {
+    if (modelCleanupAttempted) return;
+    modelCleanupAttempted = true;
+    
+    console.log('Cleaning up resources...');
+    
+    // Clean up WebAgent resources
+    try {
+      await webAgent.cleanup();
+      console.log('WebAgent cleaned up successfully');
+    } catch (error) {
+      console.error('Error cleaning up WebAgent:', error);
+    }
+    
+    // Unload the model if it was loaded
+    if (lmStudioModel) {
+      try {
+        console.log('Unloading language model...');
+        await lmStudioModel.unload();
+        console.log('Language model unloaded successfully');
+      } catch (error) {
+        console.error('Error unloading language model:', error);
+        // Try a more aggressive termination if unload fails
+        try {
+          console.log('Attempting to force model termination...');
+          // This is a last resort - only do this if regular unloading fails
+          await lmStudioModel.terminate();
+          console.log('Model terminated successfully');
+        } catch (termError) {
+          console.error('Failed to terminate model:', termError);
+        }
+      }
+    }
+  };
   
   try {
     // Initialize the WebAgent with visible browser
@@ -97,12 +139,24 @@ async function main() {
       const chain = RunnableSequence.from([
         {
           //html_source: () => getInteractiveElementList(pageSource)
-          html_source: () => getSimplifiedHtml(pageSource)
+          html_source: () => {
+            // First simplify the HTML to remove unwanted elements
+            const simplified = getSimplifiedHtml(pageSource, true, true);
+            
+            // Check if we're still in danger of exceeding context limits
+            if (simplified.length > MAX_CHAR_LENGTH) {
+              console.log(`HTML content is still large (${simplified.length} chars), trimming to fit token limit...`);
+              // Use our new function to trim content to fit in context
+              return trimHtmlContent(simplified, MAX_CHAR_LENGTH);
+            }
+            
+            return simplified;
+          }
         },
         async (input) => {
           // Send to LM Studio
           const content = userMessageTemplate.content.replace("{html_source}", input.html_source)
-          console.log("Sending prompt to LM Studio:", content);
+          console.log(`Sending prompt to LM Studio (HTML size: ${input.html_source.length} chars)...`);
           return await lmStudioModel.respond([
             {
               ...systemMessage
@@ -269,26 +323,7 @@ async function main() {
   } catch (error) {
     console.error('Error in main function:', error);
   } finally {
-    console.log('Cleaning up resources...');
-    
-    // Clean up WebAgent resources
-    try {
-      await webAgent.cleanup();
-      console.log('WebAgent cleaned up successfully');
-    } catch (error) {
-      console.error('Error cleaning up WebAgent:', error);
-    }
-    
-    // Unload the model if it was loaded
-    if (lmStudioModel) {
-      try {
-        console.log('Unloading language model...');
-        await lmStudioModel.unload();
-        console.log('Language model unloaded successfully');
-      } catch (error) {
-        console.error('Error unloading language model:', error);
-      }
-    }
+    await cleanupResources();
   }
 }
 
@@ -303,4 +338,13 @@ process.on('SIGTERM', async () => {
   process.exit(0);
 });
 
-main().catch(console.error);
+// Handle uncaught exceptions to ensure cleanup
+process.on('uncaughtException', async (error) => {
+  console.error('Uncaught exception:', error);
+  process.exit(1);
+});
+
+main().catch(async (error) => {
+  console.error('Unhandled error in main:', error);
+  process.exit(1);
+});

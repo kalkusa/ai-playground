@@ -733,4 +733,112 @@ export function getSimplifiedHtml(
     console.error('Error simplifying HTML:', error);
     return html; // Return original if there's an error
   }
+}
+
+/**
+ * Trims HTML content to fit within a specified maximum length
+ * while preserving the structure by removing less important elements first.
+ * 
+ * @param html - The HTML string to trim
+ * @param maxLength - Maximum length in characters (default: 7000)
+ * @returns A trimmed HTML string that attempts to preserve important elements
+ */
+export function trimHtmlContent(html: string, maxLength: number = 7000): string {
+  // If HTML is already under the limit, return it as is
+  if (html.length <= maxLength) {
+    return html;
+  }
+  
+  try {
+    // Create a simplified version for starters
+    let trimmed = getSimplifiedHtml(html, true, true);
+    
+    // If it's still too long, start removing elements by priority
+    if (trimmed.length > maxLength) {
+      // First approach: Remove less important sections
+      
+      // 1. Try to preserve the main content area
+      const mainContentRegex = /<main[^>]*>([\s\S]*?)<\/main>/i;
+      const mainMatch = mainContentRegex.exec(trimmed);
+      
+      if (mainMatch && mainMatch[1]) {
+        // If we found main content, focus on that
+        let mainContent = mainMatch[1];
+        
+        // Wrap it in a basic HTML structure
+        mainContent = `<html><body><main>${mainContent}</main></body></html>`;
+        
+        // Check if this is short enough
+        if (mainContent.length <= maxLength) {
+          return mainContent;
+        }
+      }
+      
+      // 2. If that doesn't work, remove deeper nested elements
+      // Remove footer completely
+      trimmed = trimmed.replace(/<footer[\s\S]*?<\/footer>/gi, '');
+      
+      // Remove aside/sidebar elements
+      trimmed = trimmed.replace(/<aside[\s\S]*?<\/aside>/gi, '');
+      trimmed = trimmed.replace(/<div[^>]*class=["'][^"']*\b(sidebar|side-bar)\b[^"']*["'][^>]*>[\s\S]*?<\/div>/gi, '');
+      
+      // If still too long, limit lists to first few items
+      const listReplacer = (match: string) => {
+        const items = match.match(/<li[^>]*>[\s\S]*?<\/li>/gi) || [];
+        // Keep at most 3 list items, plus list container tags
+        const shortened = match.replace(/(<li[^>]*>[\s\S]*?<\/li>)/gi, (item, i) => {
+          return i < 3 ? item : '';
+        });
+        return shortened;
+      };
+      
+      trimmed = trimmed.replace(/<(ul|ol)[^>]*>[\s\S]*?<\/(ul|ol)>/gi, listReplacer);
+      
+      // If still too long, start truncating content but preserve structure
+      if (trimmed.length > maxLength) {
+        // Extract body content
+        const bodyMatch = /<body[^>]*>([\s\S]*?)<\/body>/i.exec(trimmed);
+        let bodyContent = bodyMatch ? bodyMatch[1] : trimmed;
+        
+        // Truncate body content while preserving important elements
+        const preserveTags = ['button', 'a', 'input', 'select', 'textarea', 'form'];
+        
+        // Find all important elements to prioritize
+        let interactiveElements = '';
+        preserveTags.forEach(tag => {
+          const tagRegex = new RegExp(`<${tag}[^>]*>([\\s\\S]*?)<\\/${tag}>|<${tag}[^>]*\\/>`, 'gi');
+          let match;
+          while ((match = tagRegex.exec(bodyContent)) !== null) {
+            interactiveElements += match[0] + '\n';
+          }
+        });
+        
+        // Create a minimal document with just the interactive elements
+        const minimalHtml = `<html><body>${interactiveElements}</body></html>`;
+        
+        // Use that if it's under the limit
+        if (minimalHtml.length <= maxLength) {
+          return minimalHtml;
+        }
+        
+        // Last resort: hard truncation with a note
+        const truncated = trimmed.substring(0, maxLength - 50);
+        // Find the last complete tag
+        const lastTagEnd = truncated.lastIndexOf('>');
+        if (lastTagEnd > 0) {
+          return truncated.substring(0, lastTagEnd + 1) + 
+                 '<div>[Content truncated due to size limits]</div></body></html>';
+        }
+        
+        // If all else fails, return a simplified stub with a message
+        return `<html><body><div>Page content was too large (${html.length} characters) and had to be truncated</div></body></html>`;
+      }
+    }
+    
+    return trimmed;
+  } catch (error) {
+    console.error('Error trimming HTML content:', error);
+    // Return a simplified version if trimming fails
+    return `<html><body><div>Error processing page content: ${String(error)}</div></body></html>`;
+  }
 } 
