@@ -84,7 +84,7 @@ async function main() {
     //const lmStudioModel = await client.llm.model(modelName);
     lmStudioModel = await client.llm.model(modelName, {
       config: {
-        contextLength: 10000,
+        contextLength: 15000,
         gpu: {
           ratio: 1.0,
         },
@@ -134,7 +134,7 @@ async function main() {
       
       // Use the createSystemMessage function to generate the system message
       const systemMessage = createSystemMessage(currentStep, MAX_STEPS, actionHistory, actionResult);
-      
+      console.log(`System message: ${systemMessage.content}`);
       // Set up the chain
       const chain = RunnableSequence.from([
         {
@@ -157,6 +157,7 @@ async function main() {
           // Send to LM Studio
           const content = userMessageTemplate.content.replace("{html_source}", input.html_source)
           console.log(`Sending prompt to LM Studio (HTML size: ${input.html_source.length} chars)...`);
+          console.log(content);
           return await lmStudioModel.respond([
             {
               ...systemMessage
