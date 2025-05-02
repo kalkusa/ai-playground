@@ -144,11 +144,11 @@ async function main() {
             const simplified = getSimplifiedHtml(pageSource, true, true);
             
             // Check if we're still in danger of exceeding context limits
-            if (simplified.length > MAX_CHAR_LENGTH) {
-              console.log(`HTML content is still large (${simplified.length} chars), trimming to fit token limit...`);
-              // Use our new function to trim content to fit in context
-              return trimHtmlContent(simplified, MAX_CHAR_LENGTH);
-            }
+            // if (simplified.length > MAX_CHAR_LENGTH) {
+            //   console.log(`HTML content is still large (${simplified.length} chars), trimming to fit token limit...`);
+            //   // Use our new function to trim content to fit in context
+            //   return trimHtmlContent(simplified, MAX_CHAR_LENGTH);
+            // }
             
             return simplified;
           }

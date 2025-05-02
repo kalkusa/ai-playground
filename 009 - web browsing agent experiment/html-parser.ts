@@ -712,6 +712,12 @@ export function getSimplifiedHtml(
     simplified = simplified.replace(/\s(on\w+)="[^"]*"/gi, ''); // Remove on* event handlers
     simplified = simplified.replace(/\shref="javascript:[^"]*"/gi, ' href="#"'); // Replace javascript: URLs
     
+    // Remove ping attributes from a tags (tracking/analytics feature)
+    simplified = simplified.replace(/\sping="[^"]*"/gi, '');
+    
+    // Remove src attributes from img tags (prevents loading images)
+    simplified = simplified.replace(/<img([^>]*)src="[^"]*"([^>]*)>/gi, '<img$1$2>');
+    
     // Remove data-* attributes if requested
     if (removeDataAttr) {
       simplified = simplified.replace(/\sdata-[a-zA-Z0-9_-]+="[^"]*"/gi, '');
