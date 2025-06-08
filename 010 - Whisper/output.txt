@@ -1,0 +1,15 @@
+WHISPER TRANSCRIPTION RESULT
+========================================
+
+Transcribed Text:
+--------------------
+And next, let's upgrade that perspective a little bit by moving up in RAM capacity. I'm going to jump up to the eight gigabyte level as that's a very common capacity level in consumer GPUs, something many of you already have on hand for other purposes.
+
+Timestamps:
+--------------------
+[0.00s - 2.34s]: And next, let's upgrade that perspective a little bit
+[2.34s - 4.26s]: by moving up in RAM capacity.
+[4.26s - 6.46s]: I'm going to jump up to the eight gigabyte level
+[6.46s - 9.54s]: as that's a very common capacity level in consumer GPUs,
+[9.54s - 11.16s]: something many of you already have on hand
+[11.16s - 12.74s]: for other purposes.
