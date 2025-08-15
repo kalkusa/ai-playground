@@ -19,11 +19,6 @@ import { ActionSchema, ActionType } from "./schemas";
 import { createSystemMessage, userMessageTemplate } from "./prompts";
 import { getInteractiveElementList, getSimplifiedHtml, trimHtmlContent } from "./html-parser";
 
-// Maximum token count to aim for (leave margin for safety)
-const MAX_TOKEN_COUNT = 8000;
-// Assuming approximately 4 characters per token for rough estimation
-const MAX_CHAR_LENGTH = MAX_TOKEN_COUNT * 4;
-
 // Global variables for cleanup
 let webAgent: WebAgent;
 let lmStudioModel: any = null;
@@ -77,11 +72,11 @@ async function main() {
     console.log('Connecting to LM Studio...');
     const client = new LMStudioClient();
     
-    //const modelName = "gemma-3-27b-it-qat";
+    const modelName = "gemma-3-27b-it-qat";
     //const modelName = "gemma-3-12b-it-qat";
     //const modelName = "gemma-3-4b-it-qat";
     //const modelName = "llama-4-scout-17b-16e-instruct";
-    const modelName = "mistral-nemo-instruct-2407";
+    //const modelName = "mistral-nemo-instruct-2407";
 
     // Get the model with larger context length
     console.log(`Loading ${modelName} model...`);
@@ -294,11 +289,11 @@ async function main() {
           } else if (result.parameters.key) {
             actionHistory += ` - Key: ${result.parameters.key}`;
           }
-          actionHistory += ` (${result.description.substring(0, 100)}${result.description.length > 100 ? '...' : ''})\n\n`;
         } else if (result.parameters.x !== undefined && result.parameters.y !== undefined) {
           actionHistory += ` - Coordinates: (${result.parameters.x}, ${result.parameters.y})`;
-          actionHistory += ` (${result.description.substring(0, 100)}${result.description.length > 100 ? '...' : ''})\n\n`;
         }
+        // Always include the full description which contains reasoning
+        actionHistory += `\nReasoning: ${result.description}\n\nResult: ${actionResult}\n\n`;
       } catch (error) {
         console.error(`Error executing action:`, error);
         actionResult = `Error: ${error instanceof Error ? error.message : String(error)}`;

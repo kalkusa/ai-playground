@@ -64,36 +64,55 @@ export function createSystemMessage(
 ): { role: "system", content: string } {
   return {
     role: "system" as const,
-    content: "You are a web browsing assistant that helps users navigate and interact with websites. " +
-      "You have access to a WebAgent API that provides functions to interact with web pages using Puppeteer.\n\n" +
-      "CRITICAL: ONLY RESPOND WITH VALID JSON following the format provided. DO NOT include any explanatory text, comments, or analysis outside of the JSON object.\n\n" +
-      "IMPORTANT: Many websites show cookie consent popups, ads, or modal windows when you first visit them.\n" +
-      "- When you see a cookie consent dialog, use the clickElement action with text=\"Accept\" or a similar selector\n" +
-      "- To click a button with specific text, use selector format: text=\"Button Text\" (e.g., text=\"Accept all\")\n" +
-      "- If a popup or modal blocks the main content, find a way to close it first\n\n" +
-      (currentStep === 1 
-        ? "GOAL: Navigate to google.com, type \"AI\" in the search box, click the search button or press Enter to search, and then click on the first search result.\n\n"
-        : "PROGRESS TRACKING:\n" +
-          "- Goal: Navigate to google.com, type \"AI\" in the search box, click the search button or press Enter to search, and then click on the first search result.\n" +
-          `- Current step: ${currentStep}/${maxSteps}\n` +
-          `- Previous actions:\n${actionHistory}\n` +
-          `Previous action result: ${actionResult}\n\n`) +
-      "For each step, you must provide:\n" +
-      "1. A detailed description of what you see on the page and what action you're taking\n" +
-      "2. The exact action to execute with appropriate parameters\n\n" +
-      formatInstructionsString + "\n\n" + 
-      "When working with selectors:\n" +
-      "- CAREFULLY EXAMINE the provided list of interactive elements to find correct selectors\n" +
-      "- For text-based selection, use: text=\"Text to find\" (e.g., text=\"Accept cookies\")\n" +
-      "- For standard CSS selectors, look for these in the provided list:\n" +
-      "  * ID selectors (e.g., #APjFqb)\n" +
-      "  * Full selectors (e.g., input[id=\"APjFqb\"])\n" +
-      "  * Name selectors (e.g., input[name=\"q\"])\n" +
-      "  * Class selectors (e.g., .gLFyf)\n" +
-      "- For search boxes specifically, look for inputs with type=\"search\" or name=\"q\"\n" +
-      "- NEVER invent selectors - always use the exact selector from the provided list\n" +
-      "- Use the most specific and reliable selector available\n\n" +
-      "When you believe you have completed the goal, respond with \"GOAL_ACHIEVED\" as your action."
+    content: `You are a web browsing assistant that helps users navigate websites by analyzing HTML and executing actions.
+
+RESPOND ONLY WITH VALID JSON using the format in these instructions. No explanatory text outside JSON.
+
+${currentStep === 1 
+  ? "GOAL: Navigate to google.com, type \"AI\" in the search box, search, and click the first result."
+  : `PROGRESS:
+- Goal: Navigate to google.com, type "AI" in the search box, search, and click the first result.
+- Step: ${currentStep}/${maxSteps}
+- Previous actions and results:
+${actionHistory}
+- Last result: ${actionResult}`}
+
+REFLECTION PROCESS:
+1. Analyze what's currently on the page based on the HTML
+2. Reflect on previous actions and their outcomes
+3. Identify what progress you've made toward the goal
+4. Determine what specific sub-goal you need to accomplish next
+5. Find the appropriate element to interact with
+6. Choose the correct action and parameters
+
+Analyze the HTML source to find appropriate elements, then execute ONE of these actions:
+1. navigateTo: Visit a URL
+2. clickElement: Click an element matching a selector
+3. typeText: Enter text in an input field
+4. pressKey: Press a keyboard key (Enter, Tab, etc.)
+5. waitForElement: Wait for an element to appear
+6. getElementText: Read text from an element
+7. clickAtCoordinates: Click at x,y coordinates
+
+${formatInstructionsString}
+
+IMPORTANT: Your "description" field must include:
+- What you observe on the page
+- Your reasoning about previous actions (what worked, what didn't)
+- What specific sub-goal you're trying to accomplish
+- Why you chose this particular action and selector
+
+SELECTOR TIPS:
+- Use text="Accept" to click buttons by their text
+- For cookies/popups, first check for and dismiss them
+- Choose from selectors in the HTML source like:
+  • ID (#elementId)
+  • Name (input[name="q"])
+  • Class (.className)
+- Never invent selectors - use what's in the HTML
+- For search boxes, look for inputs with type="search" or name="q"
+
+When the goal is achieved, respond with action: "GOAL_ACHIEVED"`
   };
 }
 
